@@ -50,6 +50,89 @@
   .math-block .frac .den { display: block; padding: 1px 6px 0; }
   /* SVG architecture diagram — no hover transforms (cause jitter on <g>) */
   .arch-node { cursor: default; }
+
+  /* === Smooth scroll for nav anchors === */
+  html { scroll-behavior: smooth; }
+
+  /* === Enhanced card hover (smooth lift + color brightness) === */
+  .canva-pipeline > div { transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1); }
+
+  /* Hero KPI cards: extra polish */
+  section.relative.bg-blue-500 .bg-white\/10 {
+    transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  section.relative.bg-blue-500 .bg-white\/10:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+    transform: translateY(-4px) scale(1.02);
+  }
+
+  /* Plotly chart hover container (subtle scale) */
+  .js-plotly-plot { transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1); }
+
+  /* Plotly tooltip Canva styling */
+  .hovertext path { stroke: #111827 !important; stroke-width: 2 !important; }
+  .hovertext text { font-family: 'Outfit', sans-serif !important; }
+  g.hoverlayer .hovertext rect.bg { rx: 8 !important; ry: 8 !important; }
+
+  /* Decision / feature cards: bouncier scale */
+  .group.cursor-default {
+    transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1),
+                background-color 0.3s ease,
+                box-shadow 0.3s ease;
+  }
+
+  /* Stats cards (Result section): pulse-on-hover */
+  @keyframes subtle-pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.015); }
+  }
+  .bg-blue-500.text-white.rounded-lg:hover,
+  .bg-emerald-500.text-white.rounded-lg:hover,
+  .bg-amber-500.text-white.rounded-lg:hover,
+  .bg-rose-500.text-white.rounded-lg:hover {
+    transform: translateY(-3px);
+    transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  /* Nav link smooth underline on hover */
+  nav a {
+    position: relative;
+    transition: color 0.2s ease;
+  }
+  nav a::after {
+    content: '';
+    position: absolute;
+    left: 50%; right: 50%;
+    bottom: 4px;
+    height: 2px;
+    background: #3B82F6;
+    transition: left 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+                right 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  nav a:hover::after { left: 12%; right: 12%; }
+
+  /* Hero title: gentle float-in on page load */
+  @keyframes float-in {
+    from { opacity: 0; transform: translateY(40px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  section.bg-blue-500 h1 {
+    animation: float-in 1s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  section.bg-blue-500 p.text-lg { animation: float-in 1s cubic-bezier(0.22, 1, 0.36, 1) 0.15s both; }
+  section.bg-blue-500 .grid > div { animation: float-in 0.8s cubic-bezier(0.22, 1, 0.36, 1) both; }
+  section.bg-blue-500 .grid > div:nth-child(1) { animation-delay: 0.30s; }
+  section.bg-blue-500 .grid > div:nth-child(2) { animation-delay: 0.40s; }
+  section.bg-blue-500 .grid > div:nth-child(3) { animation-delay: 0.50s; }
+  section.bg-blue-500 .grid > div:nth-child(4) { animation-delay: 0.60s; }
+
+  /* Phase boxes in pipeline — subtle entry stagger */
+  .canva-pipeline .grid.grid-cols-12 { transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1); }
+
+  /* Reduced motion preference */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
 </style>
 </head>
 <body class="antialiased">
@@ -470,7 +553,7 @@
             </div>
           </div>
         </div>
-        <div class="flex justify-center py-4"><div class="flex flex-col items-center"><div class="w-1 h-8 bg-gray-900 rounded-full"></div><div class="w-0 h-0" style="border-left:8px solid transparent;border-right:8px solid transparent;border-top:12px solid #111827;"></div></div></div>
+        <div class="grid grid-cols-12 gap-4 py-4"><div class="hidden md:block md:col-span-2"></div><div class="col-span-12 md:col-span-10 flex justify-center"><div class="flex flex-col items-center"><div class="w-1 h-8 bg-gray-900 rounded-full"></div><div class="w-0 h-0" style="border-left:8px solid transparent;border-right:8px solid transparent;border-top:12px solid #111827;"></div></div></div></div>
 
         <!-- PHASE 02: STORAGE -->
         <div class="grid grid-cols-12 gap-4 items-center">
@@ -491,7 +574,7 @@
             </div>
           </div>
         </div>
-        <div class="flex justify-center py-4"><div class="flex flex-col items-center"><div class="w-1 h-8 bg-gray-900 rounded-full"></div><div class="w-0 h-0" style="border-left:8px solid transparent;border-right:8px solid transparent;border-top:12px solid #111827;"></div></div></div>
+        <div class="grid grid-cols-12 gap-4 py-4"><div class="hidden md:block md:col-span-2"></div><div class="col-span-12 md:col-span-10 flex justify-center"><div class="flex flex-col items-center"><div class="w-1 h-8 bg-gray-900 rounded-full"></div><div class="w-0 h-0" style="border-left:8px solid transparent;border-right:8px solid transparent;border-top:12px solid #111827;"></div></div></div></div>
 
         <!-- PHASE 03: FEATURES -->
         <div class="grid grid-cols-12 gap-4 items-center">
@@ -528,7 +611,7 @@
             </div>
           </div>
         </div>
-        <div class="flex justify-center py-4"><div class="flex flex-col items-center"><div class="w-1 h-8 bg-gray-900 rounded-full"></div><div class="w-0 h-0" style="border-left:8px solid transparent;border-right:8px solid transparent;border-top:12px solid #111827;"></div></div></div>
+        <div class="grid grid-cols-12 gap-4 py-4"><div class="hidden md:block md:col-span-2"></div><div class="col-span-12 md:col-span-10 flex justify-center"><div class="flex flex-col items-center"><div class="w-1 h-8 bg-gray-900 rounded-full"></div><div class="w-0 h-0" style="border-left:8px solid transparent;border-right:8px solid transparent;border-top:12px solid #111827;"></div></div></div></div>
 
         <!-- PHASE 04: TENSOR -->
         <div class="grid grid-cols-12 gap-4 items-center">
@@ -547,7 +630,7 @@
             </div>
           </div>
         </div>
-        <div class="flex justify-center py-4"><div class="flex flex-col items-center"><div class="w-1 h-8 bg-gray-900 rounded-full"></div><div class="w-0 h-0" style="border-left:8px solid transparent;border-right:8px solid transparent;border-top:12px solid #111827;"></div></div></div>
+        <div class="grid grid-cols-12 gap-4 py-4"><div class="hidden md:block md:col-span-2"></div><div class="col-span-12 md:col-span-10 flex justify-center"><div class="flex flex-col items-center"><div class="w-1 h-8 bg-gray-900 rounded-full"></div><div class="w-0 h-0" style="border-left:8px solid transparent;border-right:8px solid transparent;border-top:12px solid #111827;"></div></div></div></div>
 
         <!-- PHASE 05: MODEL INFERENCE -->
         <div class="grid grid-cols-12 gap-4 items-center">
@@ -566,7 +649,7 @@
             </div>
           </div>
         </div>
-        <div class="flex justify-center py-4"><div class="flex flex-col items-center"><div class="w-1 h-8 bg-gray-900 rounded-full"></div><div class="w-0 h-0" style="border-left:8px solid transparent;border-right:8px solid transparent;border-top:12px solid #111827;"></div></div></div>
+        <div class="grid grid-cols-12 gap-4 py-4"><div class="hidden md:block md:col-span-2"></div><div class="col-span-12 md:col-span-10 flex justify-center"><div class="flex flex-col items-center"><div class="w-1 h-8 bg-gray-900 rounded-full"></div><div class="w-0 h-0" style="border-left:8px solid transparent;border-right:8px solid transparent;border-top:12px solid #111827;"></div></div></div></div>
 
         <!-- PHASE 06: SCORE MATRIX -->
         <div class="grid grid-cols-12 gap-4 items-center">
@@ -585,7 +668,7 @@
             </div>
           </div>
         </div>
-        <div class="flex justify-center py-4"><div class="flex flex-col items-center"><div class="w-1 h-8 bg-gray-900 rounded-full"></div><div class="w-0 h-0" style="border-left:8px solid transparent;border-right:8px solid transparent;border-top:12px solid #111827;"></div></div></div>
+        <div class="grid grid-cols-12 gap-4 py-4"><div class="hidden md:block md:col-span-2"></div><div class="col-span-12 md:col-span-10 flex justify-center"><div class="flex flex-col items-center"><div class="w-1 h-8 bg-gray-900 rounded-full"></div><div class="w-0 h-0" style="border-left:8px solid transparent;border-right:8px solid transparent;border-top:12px solid #111827;"></div></div></div></div>
 
         <!-- PHASE 07: FILTERS -->
         <div class="grid grid-cols-12 gap-4 items-center">
@@ -612,7 +695,7 @@
             </div>
           </div>
         </div>
-        <div class="flex justify-center py-4"><div class="flex flex-col items-center"><div class="w-1 h-8 bg-gray-900 rounded-full"></div><div class="w-0 h-0" style="border-left:8px solid transparent;border-right:8px solid transparent;border-top:12px solid #111827;"></div></div></div>
+        <div class="grid grid-cols-12 gap-4 py-4"><div class="hidden md:block md:col-span-2"></div><div class="col-span-12 md:col-span-10 flex justify-center"><div class="flex flex-col items-center"><div class="w-1 h-8 bg-gray-900 rounded-full"></div><div class="w-0 h-0" style="border-left:8px solid transparent;border-right:8px solid transparent;border-top:12px solid #111827;"></div></div></div></div>
 
         <!-- PHASE 08: TOP-K SELECTION -->
         <div class="grid grid-cols-12 gap-4 items-center">
@@ -1071,6 +1154,22 @@
 
     <!-- Plotly K sweep chart -->
     <div class="bg-white border-2 border-gray-100 rounded-2xl p-6 md:p-8">
+      <!-- Highlight chips above chart -->
+      <div class="flex flex-wrap gap-2 mb-5">
+        <div class="text-xs uppercase tracking-wider text-gray-500 font-bold pr-2 self-center">圖例：</div>
+        <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold" style="background:#FCE7E7;color:#9F1239;">
+          <span class="w-3 h-3 rounded-sm" style="background:#F43F5E;"></span>K=2 · Best Return
+        </div>
+        <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold" style="background:#DBEAFE;color:#1D4ED8;">
+          <span class="w-3 h-3 rounded-sm" style="background:#3B82F6;"></span>K=5 · Chosen
+        </div>
+        <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold" style="background:#FEF3C7;color:#B45309;">
+          <span class="w-3 h-3 rounded-sm" style="background:#F59E0B;"></span>K=7 · Best Sharpe
+        </div>
+        <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold" style="background:#F3F4F6;color:#6B7280;">
+          <span class="w-3 h-3 rounded-sm" style="background:#D1D5DB;"></span>其他 K 值
+        </div>
+      </div>
       <div id="k-sweep-chart" style="width:100%;height:500px;"></div>
     </div>
 
@@ -1153,16 +1252,6 @@
       </div>
     </div>
 
-    <!-- Plotly: Random vs LGBM comparison -->
-    <div class="bg-white rounded-2xl p-6 md:p-8 mb-10">
-      <div class="text-xs uppercase tracking-wider text-gray-500 font-bold mb-2">Random vs LGBM</div>
-      <h3 class="text-xl md:text-2xl font-extrabold text-gray-900 mb-2">30 個 random seed vs LGBM 單次結果</h3>
-      <p class="text-sm text-gray-600 mb-6 leading-relaxed">
-        左邊灰點 = 30 個 random seed 的個別報酬，灰色橫線 = random mean；
-        右邊星星 = LGBM 單次結果。中間虛線 + 標籤顯示 lift（pp）跟 z-score。
-      </p>
-      <div id="baseline-box-chart" style="width:100%;height:560px;"></div>
-    </div>
 
     <!-- Comparison table -->
     <div class="bg-white text-gray-900 rounded-lg border-2 border-gray-900 mb-10 overflow-x-auto">
@@ -1820,9 +1909,8 @@ const K_SWEEP = [
   };
   const layout = {
     ...CANVA_THEME,
-    margin: { l: 65, r: 65, t: 70, b: 60 },
+    margin: { l: 65, r: 65, t: 60, b: 50 },
     xaxis: {
-      title: { text: 'K (每日選幾檔股票)', font: { family: 'Outfit', size: 13, color: '#6B7280' }, standoff: 10 },
       tickfont: { family: 'Outfit', size: 13, color: '#111827' },
       type: 'category',
       showgrid: false, showline: false, ticks: '',
@@ -1848,15 +1936,6 @@ const K_SWEEP = [
       bgcolor: 'rgba(255,255,255,0.8)',
     },
     bargap: 0.3,
-    annotations: [
-      // Highlight badges below each special K
-      {x: '2', y: -0.10, xref: 'x', yref: 'paper', text: '<b>BEST RETURN</b>', showarrow: false,
-       font: {family: 'Outfit', size: 9, color: '#F43F5E'}, bgcolor: '#FCE7E7', borderpad: 4},
-      {x: '5', y: -0.10, xref: 'x', yref: 'paper', text: '<b>CHOSEN</b>', showarrow: false,
-       font: {family: 'Outfit', size: 9, color: '#1D4ED8'}, bgcolor: '#DBEAFE', borderpad: 4},
-      {x: '7', y: -0.10, xref: 'x', yref: 'paper', text: '<b>BEST SHARPE</b>', showarrow: false,
-       font: {family: 'Outfit', size: 9, color: '#B45309'}, bgcolor: '#FEF3C7', borderpad: 4},
-    ],
   };
   Plotly.newPlot('k-sweep-chart', [traceCycle, traceSharpe], layout, {responsive: true, displayModeBar: false});
 })();
@@ -1916,163 +1995,6 @@ const EQUITY = {
   Plotly.newPlot('equity-curves-chart', traces, layout, {responsive: true, displayModeBar: false});
 })();
 
-// ============= Baseline Random K=5 — 30 seeds × 4 months =============
-const BASELINE = {
-  '2026-01': {
-    returns: [125.21, 140.20, 120.31, 134.25, 112.15, 129.53, 138.96, 127.76, 146.10, 115.70,
-              108.74, 117.52, 148.83, 107.55, 112.53, 144.51, 132.74, 122.46, 152.12, 135.11,
-              105.29, 126.64, 125.60, 104.73, 125.80, 130.55, 125.19,  97.13, 111.20, 145.88],
-    mean: 125.68, std: 14.28, lgbm: 296.18, z: 11.94,
-  },
-  '2026-02': {
-    returns: [ 64.95,  58.58,  64.73,  67.51,  65.16,  47.31,  61.07,  55.99,  73.64,  55.30,
-               63.17,  64.98,  56.74,  53.30,  57.70,  56.96,  68.37,  54.10,  66.16,  59.02,
-               79.93,  62.17,  63.69,  58.53,  56.47,  50.28,  57.62,  52.81,  54.88,  72.72],
-    mean: 60.79, std: 7.11, lgbm: 134.65, z: 10.39,
-  },
-  '2026-03': {
-    returns: [105.66, 124.40, 148.95, 134.86, 137.65, 127.40, 129.81, 106.85, 126.14, 129.25,
-              163.18, 141.52, 120.05, 120.66, 128.83, 133.19, 115.39, 150.50, 132.24, 101.18,
-              116.20, 130.93, 122.91, 139.05, 128.02, 156.50, 109.33, 131.07, 143.85, 140.21],
-    mean: 129.86, std: 14.47, lgbm: 333.42, z: 14.07,
-  },
-  '2026-04': {
-    returns: [143.43, 153.24, 162.77, 165.32, 152.60, 176.21, 214.17, 175.74, 190.80, 145.96,
-              125.91, 159.74, 181.94, 157.13, 143.54, 176.88, 156.62, 143.77, 151.23, 123.39,
-              150.30, 174.84, 156.65, 141.01, 132.77, 141.81, 145.43, 154.41, 118.69, 158.24],
-    mean: 155.82, std: 20.07, lgbm: 303.76, z: 7.37,
-  },
-};
-
-(function renderBaselineBox() {
-  const months = ['2026-01', '2026-02', '2026-03', '2026-04'];
-  const monthColors = {'2026-01': '#3B82F6', '2026-02': '#10B981', '2026-03': '#F59E0B', '2026-04': '#F43F5E'};
-
-  // Random scatter points (jittered horizontally) — Canva 風的個別點散佈
-  const allX = [];
-  const allY = [];
-  months.forEach((m, mIdx) => {
-    BASELINE[m].returns.forEach(v => {
-      // Position random points slightly left of month
-      allX.push(mIdx - 0.18 + (Math.random() - 0.5) * 0.18);
-      allY.push(v);
-    });
-  });
-  const randomScatter = {
-    type: 'scatter',
-    mode: 'markers',
-    name: 'Random (30 seeds)',
-    x: allX, y: allY,
-    marker: {
-      color: '#D1D5DB', size: 7, opacity: 0.7,
-      line: { color: 'white', width: 1 },
-    },
-    hovertemplate: '<b>random seed</b><br>return = %{y:.2f}%<extra></extra>',
-    showlegend: true,
-  };
-
-  // Random mean as a horizontal bar (median line for each month)
-  const randomMean = {
-    type: 'scatter',
-    mode: 'markers',
-    name: 'Random mean',
-    x: months.map((_, i) => i - 0.18),
-    y: months.map(m => BASELINE[m].mean),
-    marker: {
-      symbol: 'line-ew', size: 30,
-      line: { color: '#374151', width: 4 },
-    },
-    hovertemplate: '<b>%{customdata} · Random mean</b><br>+%{y:.2f}%<extra></extra>',
-    customdata: months,
-    showlegend: true,
-  };
-
-  // LGBM stars — bigger and clearer
-  const lgbmTrace = {
-    type: 'scatter',
-    mode: 'markers',
-    name: 'LGBM (single run)',
-    x: months.map((_, i) => i + 0.18),
-    y: months.map(m => BASELINE[m].lgbm),
-    marker: {
-      symbol: 'star', size: 32,
-      color: months.map(m => monthColors[m]),
-      line: { color: '#111827', width: 3 },
-    },
-    hovertemplate: '<b>%{customdata} · LGBM</b><br>+%{y:.2f}%<extra></extra>',
-    customdata: months,
-    showlegend: true,
-  };
-
-  // Lift arrows — visual连接 random mean → LGBM star (showing the lift)
-  const liftShapes = months.map((m, i) => ({
-    type: 'line',
-    x0: i - 0.18, x1: i + 0.18,
-    y0: BASELINE[m].mean, y1: BASELINE[m].lgbm,
-    line: { color: monthColors[m], width: 2, dash: 'dot' },
-    layer: 'below',
-  }));
-
-  // 文字註解：z-score 跟 +XXX% 分別放在 random mean 跟 LGBM 旁
-  const annotations = [];
-  months.forEach((m, i) => {
-    // Random mean label (左下)
-    annotations.push({
-      x: i - 0.18, y: BASELINE[m].mean,
-      xshift: -10, yshift: 0, xanchor: 'right', yanchor: 'middle',
-      text: `+${BASELINE[m].mean.toFixed(0)}%`,
-      showarrow: false,
-      font: { family: 'Outfit', size: 11, color: '#6B7280' },
-    });
-    // LGBM label (右上)
-    annotations.push({
-      x: i + 0.18, y: BASELINE[m].lgbm,
-      xshift: 12, yshift: 0, xanchor: 'left', yanchor: 'middle',
-      text: `<b style="color:${monthColors[m]};">+${BASELINE[m].lgbm.toFixed(0)}%</b>`,
-      showarrow: false,
-      font: { family: 'Outfit', size: 13, color: monthColors[m] },
-    });
-    // Lift label between them
-    const midY = (BASELINE[m].mean + BASELINE[m].lgbm) / 2;
-    annotations.push({
-      x: i, y: midY,
-      text: `<b>+${(BASELINE[m].lgbm - BASELINE[m].mean).toFixed(0)} pp</b><br><span style="font-size:10px;">${BASELINE[m].z.toFixed(1)}σ</span>`,
-      showarrow: false,
-      font: { family: 'Outfit', size: 11, color: '#10B981' },
-      bgcolor: 'rgba(255,255,255,0.95)',
-      bordercolor: '#10B981', borderwidth: 1.5, borderpad: 4,
-    });
-  });
-
-  const layout = {
-    ...CANVA_THEME,
-    margin: { l: 70, r: 60, t: 30, b: 80 },
-    xaxis: {
-      tickmode: 'array', tickvals: months.map((_, i) => i), ticktext: months,
-      tickfont: { family: 'Outfit', size: 13, color: '#111827' },
-      title: { text: '月份', font: { family: 'Outfit', size: 13, color: '#6B7280' }, standoff: 10 },
-      range: [-0.55, 3.55],
-      showgrid: false, showline: false, ticks: '',
-    },
-    yaxis: {
-      title: { text: '單月總報酬 (%)', font: { family: 'Outfit', size: 13, color: '#6B7280' }, standoff: 10 },
-      tickfont: { family: 'Outfit', size: 11, color: '#6B7280' },
-      tickformat: '.0f', ticksuffix: '%',
-      gridcolor: '#F3F4F6', zerolinecolor: '#111827', zerolinewidth: 2,
-      showline: false, ticks: '',
-      range: [30, 380],
-    },
-    legend: {
-      orientation: 'h', y: -0.22, x: 0.5, xanchor: 'center',
-      font: { family: 'Outfit', size: 12, color: '#374151' },
-    },
-    hovermode: 'closest',
-    shapes: liftShapes,
-    annotations,
-  };
-
-  Plotly.newPlot('baseline-box-chart', [randomScatter, randomMean, lgbmTrace], layout, {responsive: true, displayModeBar: false});
-})();
 </script>
 
 </body>
