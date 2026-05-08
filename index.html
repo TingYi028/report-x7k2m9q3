@@ -1,0 +1,1941 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>LightGBM LambdaRank 策略技術報告 — 張廷藝 · NCKU 製造所</title>
+
+<!-- Tailwind -->
+<script src="https://cdn.tailwindcss.com"></script>
+
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+
+<!-- Plotly -->
+<script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+
+<style>
+  :root {
+    --fg: #111827;
+    --bg: #ffffff;
+    --primary: #3B82F6;
+    --secondary: #10B981;
+    --accent: #F59E0B;
+    --rose: #F43F5E;
+    --muted: #F3F4F6;
+    --border: #E5E7EB;
+  }
+  html, body { font-family: 'Outfit', sans-serif; color: var(--fg); background: var(--bg); -webkit-font-smoothing: antialiased; }
+  .mono, code { font-family: 'JetBrains Mono', monospace; }
+  h1, h2, h3, h4 { letter-spacing: -0.02em; }
+  .tabular-nums { font-variant-numeric: tabular-nums; }
+  :focus-visible { outline: none; box-shadow: 0 0 0 3px var(--primary); }
+  .shape-circle { border-radius: 9999px; }
+  .shape-square { border-radius: 8px; }
+  table { border-collapse: separate; border-spacing: 0; }
+
+  /* Inline math (mono font; allow wrap to avoid container overflow) */
+  .math, code.math { font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+  .math sub, .math sup { font-size: 0.7em; font-weight: 600; }
+  /* Display math block — auto horizontal scroll if too wide for container */
+  .math-block { font-family: 'JetBrains Mono', monospace; background: #F9FAFB; border-radius: 6px; padding: 14px 18px; text-align: center; font-size: 14px; line-height: 1.7; color: #111827; overflow-x: auto; white-space: nowrap; }
+  .math-block .frac { display: inline-block; vertical-align: middle; text-align: center; margin: 0 4px; }
+  .math-block .frac .num { display: block; border-bottom: 1.5px solid #111827; padding: 0 6px 1px; }
+  .math-block .frac .den { display: block; padding: 1px 6px 0; }
+  /* SVG architecture diagram — no hover transforms (cause jitter on <g>) */
+  .arch-node { cursor: default; }
+</style>
+</head>
+<body class="antialiased">
+
+<!-- ============== TOP NAV ============== -->
+<nav class="sticky top-0 z-50 bg-white border-b-2 border-gray-900">
+  <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="h-9 w-9 bg-gray-900 text-white font-extrabold flex items-center justify-center rounded-md">L</div>
+      <div class="font-bold tracking-tight">LGBM LambdaRank · 策略報告</div>
+    </div>
+    <div class="hidden md:flex items-center gap-1 text-sm font-medium">
+      <a href="#overview" class="px-3 py-2 rounded-md hover:bg-gray-100">概述</a>
+      <a href="#math" class="px-3 py-2 rounded-md hover:bg-gray-100">數學</a>
+      <a href="#architecture" class="px-3 py-2 rounded-md hover:bg-gray-100">架構</a>
+      <a href="#features" class="px-3 py-2 rounded-md hover:bg-gray-100">特徵</a>
+      <a href="#baseline" class="px-3 py-2 rounded-md hover:bg-gray-100">對照</a>
+      <a href="#evaluation" class="px-3 py-2 rounded-md hover:bg-gray-100">評估</a>
+      <a href="#results" class="px-3 py-2 rounded-md hover:bg-gray-100">績效</a>
+      <a href="#live" class="px-3 py-2 rounded-md hover:bg-gray-100">實盤</a>
+    </div>
+    <div class="hidden md:block text-sm font-medium text-gray-600 mono">P76144621</div>
+  </div>
+</nav>
+
+<!-- ============== HERO ============== -->
+<section class="relative bg-blue-500 text-white overflow-hidden">
+  <div class="absolute -top-32 -right-24 w-[420px] h-[420px] shape-circle bg-white/10"></div>
+  <div class="absolute top-40 right-72 w-32 h-32 shape-square bg-amber-400/30 rotate-12"></div>
+  <div class="absolute -bottom-20 -left-20 w-72 h-72 shape-circle bg-emerald-400/20"></div>
+  <div class="absolute top-12 left-1/3 w-16 h-16 shape-square bg-white/10 rotate-45"></div>
+
+  <div class="relative max-w-7xl mx-auto px-6 py-24 md:py-32">
+    <div class="text-xs font-semibold tracking-[0.2em] uppercase text-amber-300 mb-6">Technical Strategy Report · 2026-05-08</div>
+    <h1 class="text-5xl md:text-7xl font-extrabold leading-[0.95] max-w-4xl">
+      今天買在最低點，<br/>明天賣在最高點。
+    </h1>
+    <p class="mt-8 text-lg md:text-xl max-w-2xl text-blue-50 leading-relaxed">
+      用 LightGBM LambdaRank 預測對數價差 <code class="math text-amber-200">log(H<sub>t+1</sub>/L<sub>t</sub>)</code>，每日選 5 檔重壓。
+      在 2026 Q1 + 4 月 NCKU 模擬平台單月回測中，每月平均報酬 <span class="font-bold text-white">+267%</span>。
+    </p>
+
+    <div class="mt-12 grid grid-cols-2 md:grid-cols-4 gap-4 max-w-3xl">
+      <div class="bg-white/10 rounded-lg p-5">
+        <div class="text-3xl md:text-4xl font-extrabold tabular-nums">K=5</div>
+        <div class="text-xs uppercase tracking-wider mt-2 text-blue-100">每日選 5 檔</div>
+      </div>
+      <div class="bg-white/10 rounded-lg p-5">
+        <div class="text-3xl md:text-4xl font-extrabold tabular-nums">20</div>
+        <div class="text-xs uppercase tracking-wider mt-2 text-blue-100">特徵維度</div>
+      </div>
+      <div class="bg-white/10 rounded-lg p-5">
+        <div class="text-3xl md:text-4xl font-extrabold tabular-nums">~1.9k</div>
+        <div class="text-xs uppercase tracking-wider mt-2 text-blue-100">候選股票</div>
+      </div>
+      <div class="bg-white/10 rounded-lg p-5">
+        <div class="text-3xl md:text-4xl font-extrabold tabular-nums">5.2y</div>
+        <div class="text-xs uppercase tracking-wider mt-2 text-blue-100">訓練資料</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============== EXECUTIVE SUMMARY ============== -->
+<section id="overview" class="bg-white">
+  <div class="max-w-7xl mx-auto px-6 py-20">
+    <div class="text-xs font-semibold tracking-[0.2em] uppercase text-blue-500 mb-4">01 · Overview</div>
+    <h2 class="text-4xl md:text-5xl font-extrabold leading-tight mb-12">為什麼選這個訊號？</h2>
+
+    <!-- ─── 背景故事 ─── -->
+    <div class="grid md:grid-cols-12 gap-10 items-start mb-16">
+      <div class="md:col-span-4">
+        <div class="bg-amber-100 text-amber-700 rounded-full px-4 py-1.5 inline-block text-xs font-extrabold uppercase tracking-[0.2em] mb-3">
+          📖 Part 1
+        </div>
+        <h3 class="text-3xl md:text-4xl font-extrabold leading-tight">背景故事</h3>
+        <p class="text-sm text-gray-500 mt-3 leading-relaxed">先理解 NCKU 平台的遊戲規則，才能想清楚什麼策略才合理。</p>
+      </div>
+      <div class="md:col-span-8 space-y-5 text-lg leading-relaxed text-gray-700">
+        <p>
+          NCKU 模擬股票交易平台跟現實股市有<span class="font-semibold text-gray-900">關鍵幾點不同</span>：
+          交易不是線上即時撮合，而是<span class="font-semibold text-gray-900">每日固定結算</span>──
+          所以無法當沖。系統也不發股息，長期持有沒有任何被動收益。沒有 0050 這種
+          「買著不動就會漲」的穩賺選項。
+        </p>
+        <p>
+          這代表唯一能產生收益的方式只有<span class="font-semibold text-gray-900">低買高賣賺取價差</span>。
+          而平台撮合訂單的條件是：委託價必須落在<span class="font-semibold text-gray-900">當日 [low, high] 區間之內</span>，
+          只要落在裡面，就會 100% 成交（perfect fill）；不在裡面，整筆委託作廢。
+        </p>
+        <p>
+          這個規則直接給出最合邏輯的策略：<span class="font-semibold text-gray-900">每次買單就掛在當日最低點 L<sub>t</sub>、
+          每次賣單就掛在當日最高點 H<sub>t</sub></span>。
+          中間任何價位（譬如均價、開盤價、收盤價）對我們來說都毫無意義 ──
+          因為我們可以保證掛在 L 跟 H 上一定會 fill，那為什麼要掛在中間賺更少？
+        </p>
+      </div>
+    </div>
+
+    <!-- ─── 核心交易策略 ─── -->
+    <div class="grid md:grid-cols-12 gap-10 items-start">
+      <div class="md:col-span-4">
+        <div class="bg-blue-100 text-blue-700 rounded-full px-4 py-1.5 inline-block text-xs font-extrabold uppercase tracking-[0.2em] mb-3">
+          🎯 Part 2
+        </div>
+        <h3 class="text-3xl md:text-4xl font-extrabold leading-tight">核心交易策略</h3>
+        <p class="text-sm text-gray-500 mt-3 leading-relaxed">把賺價差的邏輯推到極致：今天買、隔天賣、強制脫手。</p>
+      </div>
+      <div class="md:col-span-8 space-y-5 text-lg leading-relaxed text-gray-700">
+        <p>
+          很明顯：若只能透過「買 L、賣 H」賺價差，<span class="font-semibold text-gray-900">最快的賺錢策略就是
+          今天買、隔天馬上賣</span>。問題就可以乾淨地定義成一個機器學習任務：
+        </p>
+
+        <div class="bg-gray-900 text-white rounded-2xl p-6 md:p-8 my-6">
+          <div class="text-xs uppercase tracking-[0.2em] text-amber-400 font-bold mb-3">🧮 問題定義</div>
+          <p class="text-base leading-relaxed mb-3">
+            給定第 <code class="mono text-amber-200">t</code> 日所有候選股票的歷史 OHLC，
+            為每一檔 <code class="mono text-amber-200">i</code> 預測：
+          </p>
+          <div class="bg-black/30 rounded-lg p-5 my-3 mono text-center text-lg">
+            y<sub>i,t</sub> &nbsp;=&nbsp; log ( H<sub>i,t+1</sub> / L<sub>i,t</sub> )
+          </div>
+          <p class="text-sm text-gray-300 leading-relaxed">
+            然後選 y 預測值最大的 K = 5 檔，今天 13:00 前掛 limit buy @ L<sub>t</sub>、
+            隔天 13:00 前掛 limit sell @ H<sub>t+1</sub>。每檔分配 1/5 資金，等權重。
+          </p>
+        </div>
+
+        <p>
+          這個策略最重要的特徵不是「買 L 賣 H」── 而是
+          <span class="font-extrabold text-rose-600 bg-rose-50 px-2 py-0.5 rounded">「隔天賣是強制的」</span>。
+          無論隔天是漲是跌、無論還想不想留，<span class="font-semibold text-gray-900">通通在隔日盤中
+          以 limit sell @ floor_tick(H<sub>t+1</sub> − 1tk) 全部出清</span>，
+          當天再用變回現金的資金重新買今天的新 5 檔。為什麼一定要強制？三個理由：
+        </p>
+
+        <div class="grid md:grid-cols-3 gap-4 my-6">
+          <div class="bg-blue-50 border-l-4 border-blue-500 rounded-r-2xl p-5">
+            <div class="text-3xl mb-2">🔄</div>
+            <div class="font-extrabold text-gray-900 mb-2">資金週轉率拉到極限</div>
+            <p class="text-sm text-gray-700 leading-relaxed">
+              每個交易日完成「進 → 出 → 再進」的完整循環，N 個交易日就有 N 次複利機會。
+              如果改成持有 2 天，cycle 數量直接砍半，複利威力縮水。
+            </p>
+          </div>
+          <div class="bg-emerald-50 border-l-4 border-emerald-500 rounded-r-2xl p-5">
+            <div class="text-3xl mb-2">🛡️</div>
+            <div class="font-extrabold text-gray-900 mb-2">每天 reset 一次曝險</div>
+            <p class="text-sm text-gray-700 leading-relaxed">
+              股票過夜會吃到下個交易日的開盤跳空、消息面、大盤系統性風險。
+              強制隔日脫手 = 最大持倉時間 1 個交易日，風險不會跨日累積。
+            </p>
+          </div>
+          <div class="bg-amber-50 border-l-4 border-amber-500 rounded-r-2xl p-5">
+            <div class="text-3xl mb-2">🎯</div>
+            <div class="font-extrabold text-gray-900 mb-2">問題形式最簡單</div>
+            <p class="text-sm text-gray-700 leading-relaxed">
+              因為 target 直接定義在 (t, t+1) 這一對價格上，模型每天獨立判斷
+              24 小時內的反彈強度，不需要做多步動態規劃 ──
+              變成 ML 上熟悉的「每日截面排序」問題。
+            </p>
+          </div>
+        </div>
+
+        <p>
+          整理一下完整策略，每天的工作流程：
+        </p>
+        <ol class="list-decimal list-outside ml-6 space-y-2 text-base">
+          <li><span class="font-semibold text-gray-900">早上模型預測</span>：把 1900 多檔股票丟進 LGBM 算分數，估計每檔的 y<sub>i,t</sub>。</li>
+          <li><span class="font-semibold text-gray-900">過濾</span>：踢掉流動性不足、價格過低、今日漲停的股票。</li>
+          <li><span class="font-semibold text-gray-900">選 K = 5</span>：分數最高的 5 檔。</li>
+          <li><span class="font-semibold text-gray-900">建立兩組訂單</span>：(a) 把昨天的 5 檔以 H<sub>t</sub>−1tk 全部 sell；(b) 把今天新的 5 檔以 L<sub>t</sub>+1tk 各買 20% 資金。</li>
+          <li><span class="font-semibold text-gray-900">13:00 前送進 NCKU API</span>，下班，等明天再來一輪。</li>
+        </ol>
+
+        <p class="text-base text-gray-600 italic mt-6 pl-4 border-l-4 border-gray-300">
+          後面的章節會進入細節：模型怎麼學排序（§02 數學形式 + §04 設計取捨）、
+          架構怎麼跑（§03）、每個特徵在學什麼（§05）、K 為什麼是 5（§06）、
+          模型 vs 隨機的對照（§07）、評估方法 + 結果（§08–09）、實盤怎麼下單（§10–11）。
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============== MATH FORMULATION ============== -->
+<section id="math" class="bg-gray-100">
+  <div class="max-w-7xl mx-auto px-6 py-20">
+    <div class="text-xs font-semibold tracking-[0.2em] uppercase text-blue-500 mb-4">02 · Mathematical Formulation</div>
+    <h2 class="text-4xl md:text-5xl font-extrabold mb-6 max-w-3xl">用數學描述整套策略。</h2>
+    <p class="text-gray-700 max-w-3xl mb-12 text-lg leading-relaxed">
+      整個策略可以拆成四個數學物件：<span class="font-semibold text-gray-900">學習目標</span>（要預測什麼）、
+      <span class="font-semibold text-gray-900">損失函數</span>（怎麼訓練）、
+      <span class="font-semibold text-gray-900">評估指標</span>（怎麼判斷模型好壞）、
+      <span class="font-semibold text-gray-900">投組構造</span>（怎麼把預測變成下單）。
+      下面四張卡分別解釋這四件事，順著讀就是完整訓練 → 推論 → 執行的數學鏈條。
+    </p>
+
+    <div class="grid lg:grid-cols-2 gap-6">
+      <!-- Card: target -->
+      <div class="bg-white rounded-lg p-8">
+        <div class="text-xs uppercase tracking-wider text-blue-500 mb-2 font-semibold">Target</div>
+        <h3 class="text-2xl font-bold mb-4">① 學習目標：要預測什麼</h3>
+        <p class="text-gray-700 leading-relaxed mb-4">
+          給定第 t 日股票 i 的 OHLC（Open / High / Low / Close 四個價格），
+          我們要預測的是「明日最高 H<sub>i,t+1</sub> 相對今日最低 L<sub>i,t</sub> 的對數成長率」：
+        </p>
+        <div class="math-block mb-4">
+          y<sub>i,t</sub> &nbsp;=&nbsp; log
+          <span class="frac"><span class="num">H<sub>i,t+1</sub></span><span class="den">L<sub>i,t</sub></span></span>
+        </div>
+        <p class="text-gray-700 leading-relaxed text-sm mb-3">
+          直觀解讀：<span class="font-semibold text-gray-900">如果我們今天能買在 L<sub>t</sub>、明天能賣在 H<sub>t+1</sub>，
+          這筆交易的對數收益是多少</span>。取 log 而非簡單百分比，是為了讓正負對稱（log(H/L) ≈ (H-L)/L 在小範圍內等價，但 log 在 cross-section
+          排序時有更穩定的尾部）。
+        </p>
+        <p class="text-gray-700 leading-relaxed text-sm">
+          重點：L<sub>t</sub> 在當日 13:00 前已透過 TWSE 即時 API 揭露，
+          所以模型在「今天結束、明天開盤前」做預測時，L<sub>t</sub> 是<span class="font-semibold">可用資訊</span>，
+          不算未來函數。
+        </p>
+      </div>
+
+      <!-- Card: ranking loss -->
+      <div class="bg-white rounded-lg p-8">
+        <div class="text-xs uppercase tracking-wider text-emerald-500 mb-2 font-semibold">Loss</div>
+        <h3 class="text-2xl font-bold mb-4">② 損失函數：LambdaRank</h3>
+        <p class="text-gray-700 leading-relaxed mb-4">
+          每天把該日所有股票的 y<sub>i,t</sub> 排序，分成 10 個十分位數
+          <code class="math">ℓ<sub>i,t</sub> ∈ {0,…,9}</code>，
+          0 是最差（明日反彈最弱），9 是最好。模型訓練時不直接逼近 y<sub>i,t</sub>，
+          而是學「兩兩比較」── 給定股票對 (i, j)，模型要學會
+          <span class="font-semibold text-gray-900">哪一檔的 ℓ 較高</span>：
+        </p>
+        <div class="math-block mb-4 text-xs">
+          L &nbsp;=&nbsp; Σ<sub>t</sub> Σ<sub>(i,j)∈P<sub>t</sub></sub> &nbsp;|ΔNDCG<sup>(5)</sup><sub>ij</sub>| · log(1 + e<sup>−σ(s<sub>i</sub>−s<sub>j</sub>)</sup>)
+        </div>
+        <p class="text-gray-700 leading-relaxed text-sm mb-3">
+          逐項拆解：<code class="math">s<sub>i</sub></code> 是模型給股票 i 的分數（無單位），
+          <code class="math">P<sub>t</sub></code> 是該日所有「label 不同」的股票對，
+          <code class="math">|ΔNDCG<sup>(5)</sup>|</code> 是「如果把這對 i, j 互換位置，NDCG@5 會變化多少」的絕對值。
+        </p>
+        <p class="text-gray-700 leading-relaxed text-sm">
+          意義：每對股票的損失大小，被「換它們會不會影響 Top-5 排名」加權。
+          換言之，<span class="font-semibold text-gray-900">排錯前 5 名的成本最大、排錯後段（譬如第 200 vs 第 250 名）幾乎不影響梯度</span>。
+          這正是我們要的：模型只需要把前 5 名挑準，後段順序隨意。
+        </p>
+      </div>
+
+      <!-- Card: NDCG -->
+      <div class="bg-white rounded-lg p-8">
+        <div class="text-xs uppercase tracking-wider text-amber-500 mb-2 font-semibold">Metric</div>
+        <h3 class="text-2xl font-bold mb-4">③ 評估指標：NDCG@5</h3>
+        <p class="text-gray-700 leading-relaxed mb-4">
+          <code class="math">NDCG@K</code>（Normalized Discounted Cumulative Gain）來自資訊檢索領域，
+          原本用來評估搜尋引擎的前 K 個結果排得好不好。在我們的場景裡，
+          它衡量「模型挑出的前 5 檔，相比理想答案差多少」：
+        </p>
+        <div class="math-block mb-4">
+          NDCG@K &nbsp;=&nbsp;
+          <span class="frac"><span class="num">1</span><span class="den">Z<sub>K</sub></span></span>
+          &nbsp;Σ<sup>K</sup><sub>r=1</sub>&nbsp;
+          <span class="frac"><span class="num">2<sup>ℓ<sub>(r)</sub></sup> − 1</span><span class="den">log<sub>2</sub>(r + 1)</span></span>
+        </div>
+        <p class="text-gray-700 leading-relaxed text-sm mb-3">
+          公式裡 <code class="math">ℓ<sub>(r)</sub></code> 是模型排序第 r 名（r=1 表示首選）股票的真實 label。
+          分子 <code class="math">2<sup>ℓ</sub> − 1</code> 對 high-label 給指數獎勵
+          （label 9 比 label 0 多得 511 倍分數）；
+          分母 <code class="math">log<sub>2</sub>(r+1)</code> 對「排得越後面」給折扣。
+          <code class="math">Z<sub>K</sub></code> 是理想排序下這個量的最大值，
+          除以它讓 NDCG ∈ [0, 1]。
+        </p>
+        <p class="text-gray-700 leading-relaxed text-sm">
+          ➜ 1.0 = 完美排序，0.5 ≈ 隨機排序。LambdaRank 的損失函數梯度同時和這個指標耦合，
+          所以它字面上就是在「沿著最大化 NDCG@5 的方向」優化。
+        </p>
+      </div>
+
+      <!-- Card: portfolio -->
+      <div class="bg-white rounded-lg p-8">
+        <div class="text-xs uppercase tracking-wider text-rose-500 mb-2 font-semibold">Portfolio</div>
+        <h3 class="text-2xl font-bold mb-4">④ 投組構造：把分數變成下單</h3>
+        <p class="text-gray-700 leading-relaxed mb-4">
+          模型 inference 完得到分數矩陣後，每日從合格池 <code class="math">F<sub>t</sub></code>
+          （後文會解釋這個過濾條件）裡取分數最高的 K=5 檔：
+        </p>
+        <div class="math-block mb-3">
+          S<sub>t</sub> &nbsp;=&nbsp; argmax<sub>|S|=K,&nbsp;S⊆F<sub>t</sub></sub> &nbsp;Σ<sub>i∈S</sub>&nbsp; s<sub>i,t</sub>
+        </div>
+        <p class="text-gray-700 leading-relaxed text-sm mb-3">
+          每檔等權重持有 <code class="math">w<sub>i</sub> = 1/K = 20%</code>。
+          當日含交易成本的單日報酬可寫為：
+        </p>
+        <div class="math-block">
+          r<sub>t</sub> &nbsp;=&nbsp;
+          <span class="frac"><span class="num">1</span><span class="den">K</span></span>
+          &nbsp;Σ<sub>i∈S<sub>t</sub></sub>&nbsp;
+          [&nbsp;
+          <span class="frac"><span class="num">H<sup>↓</sup><sub>i,t+1</sub></span><span class="den">L<sup>↑</sup><sub>i,t</sub></span></span>
+          &nbsp;(1 − c<sub>s</sub>)(1 − c<sub>b</sub>) − 1&nbsp;]
+        </div>
+        <p class="text-gray-700 leading-relaxed text-xs mt-3 text-gray-500">
+          注解：<code class="math">L<sup>↑</sup></code> 表示「把 L 向上取到合法 tick」（買單規則，後段詳述），
+          <code class="math">H<sup>↓</sup></code> 是賣單向下取。
+          c<sub>b</sub> = 0.1425% 是買方手續費，c<sub>s</sub> = 0.4425% 是賣方手續 + 證交稅，
+          兩者相乘就是來回交易成本約 0.585%。
+        </p>
+      </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="mt-12 bg-gray-900 text-white rounded-lg p-8 md:p-10">
+      <div class="text-xs uppercase tracking-wider text-amber-400 mb-3 font-semibold">Filter Set</div>
+      <h3 class="text-2xl font-bold mb-3">合格池 F<sub>t</sub>：哪些股票才能被選</h3>
+      <p class="text-gray-300 max-w-3xl mb-8 leading-relaxed">
+        前面公式裡的 F<sub>t</sub>（合格池）不是「全部 1957 檔」，而是經過三重條件過濾後的子集合。
+        這三條過濾不是任意設的，每一條都對應一個現實 / 統計問題：
+      </p>
+      <div class="grid md:grid-cols-3 gap-6">
+        <div class="bg-white/5 rounded-md p-5 border-l-4 border-blue-500 min-w-0">
+          <div class="text-sm text-gray-300 mb-2">① 流動性</div>
+          <div class="text-base mono font-semibold break-words">ADV<sub>20</sub>(i, t) ≥ 5×10<sup>7</sup></div>
+          <div class="text-xs text-gray-400 mt-3 leading-relaxed">
+            20 日平均成交金額至少 5000 萬 NTD。<br/>
+            <span class="text-gray-500">為何：成交太冷的股票，我們的買單可能撐起價格、賣單可能撈不到買盤。
+            模擬平台會 perfect-fill，但實盤會有滑點，這條過濾預先排除了最危險的標的。</span>
+          </div>
+        </div>
+        <div class="bg-white/5 rounded-md p-5 border-l-4 border-emerald-500 min-w-0">
+          <div class="text-sm text-gray-300 mb-2">② 下限價</div>
+          <div class="text-base mono font-semibold break-words">C<sub>i,t</sub> ≥ 10</div>
+          <div class="text-xs text-gray-400 mt-3 leading-relaxed">
+            收盤價至少 10 元。<br/>
+            <span class="text-gray-500">為何：&lt; 10 元的股票 tick = 0.01，但相對價格只有 0.1%；
+            而 ≥ 10 元的股票 tick = 0.05，相對 0.5%。低價股的「±1 tick margin」相對成本太大，
+            訊號比較 noisy。</span>
+          </div>
+        </div>
+        <div class="bg-white/5 rounded-md p-5 border-l-4 border-amber-500 min-w-0">
+          <div class="text-sm text-gray-300 mb-2">③ 避漲停</div>
+          <div class="text-base mono font-semibold break-words">(C<sub>t</sub> − C<sub>t−1</sub>) / C<sub>t−1</sub> &lt; 0.07</div>
+          <div class="text-xs text-gray-400 mt-3 leading-relaxed">
+            今日漲幅 &lt; 7%（台股漲停板是 ±10%）。<br/>
+            <span class="text-gray-500">為何：今日已接近漲停的股票，明日繼續上攻的空間先天受限，
+            而且容易出現「跳空高開後一路殺低」的不利型態。先避開。</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ============== ARCHITECTURE DIAGRAM ============== -->
+<section id="architecture" class="bg-gray-900 text-white relative overflow-hidden">
+  <div class="absolute -top-20 -right-20 w-96 h-96 shape-circle bg-blue-500/20"></div>
+  <div class="absolute bottom-0 -left-20 w-72 h-72 shape-square bg-amber-500/10 rotate-12"></div>
+
+  <div class="relative max-w-7xl mx-auto px-6 py-24">
+    <div class="text-xs font-semibold tracking-[0.2em] uppercase text-amber-400 mb-4">03 · Architecture</div>
+    <h2 class="text-4xl md:text-5xl font-extrabold mb-6">資料怎麼從原料變成下單。</h2>
+    <p class="text-gray-300 max-w-3xl mb-6 text-lg leading-relaxed">
+      下圖完整呈現「<span class="font-semibold text-white">每天 13:00 截單前要跑一次</span>」的線上推論流程
+      （training 是 offline 一次性的事情，這裡先省略，模型就當作已經訓練好放在 disk 上）。
+      整個流程分成 10 個 <span class="font-semibold text-white">Phase</span>，每個 phase 都是一個明確的處理步驟，
+      ~1957 檔候選股票會依序穿過所有 phase，最後變成 NCKU API 收到的買賣單。
+    </p>
+    <p class="text-gray-300 max-w-3xl mb-6 text-lg leading-relaxed">
+      流程的整體骨架是這樣：先收三路資料（Phase 01）→ 統一存到 parquet（Phase 02）→
+      生 20 個技術特徵（Phase 03）→ 打包成 3D tensor（Phase 04）→
+      丟進 LGBM 算分數（Phase 05–06）→ 三條件過濾掉不合格股票（Phase 07）→
+      取分數最高的 5 檔（Phase 08）→ 為每檔生 1 sell + 1 buy 訂單（Phase 09）→
+      送進 NCKU 平台（Phase 10）。
+    </p>
+    <p class="text-gray-300 max-w-3xl mb-12 text-lg leading-relaxed">
+      其中 Phase 08（Top-K 選股）是策略的「決策點」── 在這之前是
+      <span class="font-semibold text-white">純資料處理</span>，在這之後是
+      <span class="font-semibold text-white">執行邏輯</span>。Phase 08 之後流程從一條變成兩條：
+      玫紅色的 SELL 路徑（賣昨日持倉）+ 藍色的 BUY 路徑（買今日新單），
+      最後在 Phase 10 合流到 NCKU Trading API。
+      色彩編碼：藍 = 資料 / 主流程、綠 = 資料源 / 選股、
+      橘 = 過濾、玫紅 = 賣方、深灰 = 模型 / 終端。
+    </p>
+
+    <!-- Canva-style HTML Pipeline -->
+    <div class="canva-pipeline bg-gradient-to-br from-slate-50 via-white to-blue-50 rounded-3xl p-6 md:p-10">
+
+      <!-- ===== ONLINE INFERENCE ===== -->
+      <div class="bg-white border-4 border-blue-500 rounded-2xl p-6 md:p-10 relative">
+        <div class="absolute -top-4 left-6 bg-blue-600 text-white rounded-full px-5 py-2 text-xs font-extrabold uppercase tracking-[0.2em]">
+          ⚡ Online Inference
+        </div>
+        <div class="text-blue-900 text-sm font-semibold mb-8 mt-2 ml-1">每個交易日 13:00 截單前跑一次 · ~1957 檔候選股票走完全部 10 個階段</div>
+
+        <!-- PHASE 01: DATA SOURCES -->
+        <div class="grid grid-cols-12 gap-4 items-center">
+          <div class="col-span-12 md:col-span-2">
+            <div class="bg-blue-100 text-blue-700 rounded-full px-3 py-1 inline-block text-xs font-extrabold uppercase tracking-wider mb-1">Phase 01</div>
+            <div class="text-base font-extrabold text-gray-900">資料源</div>
+            <div class="text-xs text-gray-500 mt-1">三路資料分別處理</div>
+          </div>
+          <div class="col-span-12 md:col-span-10 grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div class="bg-emerald-500 text-white rounded-2xl p-5 font-bold transition-all hover:scale-[1.02]">
+              <div class="text-3xl mb-2">📊</div>
+              <div class="text-base">yfinance batch</div>
+              <div class="text-xs opacity-90 mt-1 font-medium">每日 ~15:30 抓昨日 OHLCV</div>
+            </div>
+            <div class="bg-amber-500 text-white rounded-2xl p-5 font-bold transition-all hover:scale-[1.02]">
+              <div class="text-3xl mb-2">☁️</div>
+              <div class="text-base">TWSE MIS API</div>
+              <div class="text-xs opacity-90 mt-1 font-medium">當日 intraday L/H · live only</div>
+            </div>
+            <div class="bg-rose-500 text-white rounded-2xl p-5 font-bold transition-all hover:scale-[1.02]">
+              <div class="text-3xl mb-2">🎯</div>
+              <div class="text-base">KMeans Clusters</div>
+              <div class="text-xs opacity-90 mt-1 font-medium">概念股分群 · static .npz</div>
+            </div>
+          </div>
+        </div>
+        <div class="flex justify-center py-4"><div class="flex flex-col items-center"><div class="w-1 h-8 bg-gray-900 rounded-full"></div><div class="w-0 h-0" style="border-left:8px solid transparent;border-right:8px solid transparent;border-top:12px solid #111827;"></div></div></div>
+
+        <!-- PHASE 02: STORAGE -->
+        <div class="grid grid-cols-12 gap-4 items-center">
+          <div class="col-span-12 md:col-span-2">
+            <div class="bg-blue-100 text-blue-700 rounded-full px-3 py-1 inline-block text-xs font-extrabold uppercase tracking-wider mb-1">Phase 02</div>
+            <div class="text-base font-extrabold text-gray-900">統一儲存</div>
+            <div class="text-xs text-gray-500 mt-1">Parquet 列式格式</div>
+          </div>
+          <div class="col-span-12 md:col-span-10">
+            <div class="bg-blue-500 text-white rounded-2xl p-6 font-bold transition-all hover:scale-[1.01]">
+              <div class="flex items-center gap-4">
+                <div class="text-5xl">🗂️</div>
+                <div>
+                  <div class="text-xl">all_stocks.parquet</div>
+                  <div class="text-sm opacity-90 mt-1 font-medium">TWSE + OTC · 1957 codes × 1533 days · 2020-04 ~ 2026-04</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="flex justify-center py-4"><div class="flex flex-col items-center"><div class="w-1 h-8 bg-gray-900 rounded-full"></div><div class="w-0 h-0" style="border-left:8px solid transparent;border-right:8px solid transparent;border-top:12px solid #111827;"></div></div></div>
+
+        <!-- PHASE 03: FEATURES -->
+        <div class="grid grid-cols-12 gap-4 items-center">
+          <div class="col-span-12 md:col-span-2">
+            <div class="bg-blue-100 text-blue-700 rounded-full px-3 py-1 inline-block text-xs font-extrabold uppercase tracking-wider mb-1">Phase 03</div>
+            <div class="text-base font-extrabold text-gray-900">特徵工程</div>
+            <div class="text-xs text-gray-500 mt-1">5 個族群共 20 維</div>
+          </div>
+          <div class="col-span-12 md:col-span-10 grid grid-cols-2 md:grid-cols-5 gap-2">
+            <div class="bg-blue-500 text-white rounded-xl p-4 font-bold text-center transition-all hover:scale-[1.04]">
+              <div class="text-2xl mb-1">📈</div>
+              <div class="text-sm">Momentum</div>
+              <div class="text-xs opacity-80 mt-0.5">× 6</div>
+            </div>
+            <div class="bg-emerald-500 text-white rounded-xl p-4 font-bold text-center transition-all hover:scale-[1.04]">
+              <div class="text-2xl mb-1">📊</div>
+              <div class="text-sm">Range / Vol</div>
+              <div class="text-xs opacity-80 mt-0.5">× 5</div>
+            </div>
+            <div class="bg-amber-500 text-white rounded-xl p-4 font-bold text-center transition-all hover:scale-[1.04]">
+              <div class="text-2xl mb-1">🕯️</div>
+              <div class="text-sm">OHLC Lag</div>
+              <div class="text-xs opacity-80 mt-0.5">× 4</div>
+            </div>
+            <div class="bg-rose-500 text-white rounded-xl p-4 font-bold text-center transition-all hover:scale-[1.04]">
+              <div class="text-2xl mb-1">💧</div>
+              <div class="text-sm">Liquidity</div>
+              <div class="text-xs opacity-80 mt-0.5">× 2</div>
+            </div>
+            <div class="bg-gray-900 text-white rounded-xl p-4 font-bold text-center transition-all hover:scale-[1.04]">
+              <div class="text-2xl mb-1">🏆</div>
+              <div class="text-sm">Rank</div>
+              <div class="text-xs opacity-80 mt-0.5">× 3</div>
+            </div>
+          </div>
+        </div>
+        <div class="flex justify-center py-4"><div class="flex flex-col items-center"><div class="w-1 h-8 bg-gray-900 rounded-full"></div><div class="w-0 h-0" style="border-left:8px solid transparent;border-right:8px solid transparent;border-top:12px solid #111827;"></div></div></div>
+
+        <!-- PHASE 04: TENSOR -->
+        <div class="grid grid-cols-12 gap-4 items-center">
+          <div class="col-span-12 md:col-span-2">
+            <div class="bg-blue-100 text-blue-700 rounded-full px-3 py-1 inline-block text-xs font-extrabold uppercase tracking-wider mb-1">Phase 04</div>
+            <div class="text-base font-extrabold text-gray-900">特徵張量</div>
+            <div class="text-xs text-gray-500 mt-1">3D float32 array</div>
+          </div>
+          <div class="col-span-12 md:col-span-10">
+            <div class="bg-blue-500 text-white rounded-2xl p-6 font-bold flex items-center gap-4 transition-all hover:scale-[1.01]">
+              <div class="text-5xl">📦</div>
+              <div>
+                <div class="text-xl">Feature Tensor X</div>
+                <div class="text-sm opacity-90 mt-1 mono font-medium">shape = ℝ ^ ( D × N × 20 )</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="flex justify-center py-4"><div class="flex flex-col items-center"><div class="w-1 h-8 bg-gray-900 rounded-full"></div><div class="w-0 h-0" style="border-left:8px solid transparent;border-right:8px solid transparent;border-top:12px solid #111827;"></div></div></div>
+
+        <!-- PHASE 05: MODEL INFERENCE -->
+        <div class="grid grid-cols-12 gap-4 items-center">
+          <div class="col-span-12 md:col-span-2">
+            <div class="bg-blue-100 text-blue-700 rounded-full px-3 py-1 inline-block text-xs font-extrabold uppercase tracking-wider mb-1">Phase 05</div>
+            <div class="text-base font-extrabold text-gray-900">模型推論</div>
+            <div class="text-xs text-gray-500 mt-1">~1 秒跑完全市場</div>
+          </div>
+          <div class="col-span-12 md:col-span-10">
+            <div class="bg-gray-900 text-white rounded-2xl p-6 font-bold flex items-center gap-4 transition-all hover:scale-[1.01]" style="border: 4px solid #1F2937;">
+              <div class="text-5xl">⚡</div>
+              <div>
+                <div class="text-xl">LGBM LambdaRank Inference</div>
+                <div class="text-sm opacity-90 mt-1 font-medium">~1 sec on full market · NaN-tolerant · 600 trees</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="flex justify-center py-4"><div class="flex flex-col items-center"><div class="w-1 h-8 bg-gray-900 rounded-full"></div><div class="w-0 h-0" style="border-left:8px solid transparent;border-right:8px solid transparent;border-top:12px solid #111827;"></div></div></div>
+
+        <!-- PHASE 06: SCORE MATRIX -->
+        <div class="grid grid-cols-12 gap-4 items-center">
+          <div class="col-span-12 md:col-span-2">
+            <div class="bg-blue-100 text-blue-700 rounded-full px-3 py-1 inline-block text-xs font-extrabold uppercase tracking-wider mb-1">Phase 06</div>
+            <div class="text-base font-extrabold text-gray-900">分數矩陣</div>
+            <div class="text-xs text-gray-500 mt-1">每個 (date, code) 一個分數</div>
+          </div>
+          <div class="col-span-12 md:col-span-10">
+            <div class="bg-blue-500 text-white rounded-2xl p-6 font-bold flex items-center gap-4 transition-all hover:scale-[1.01]">
+              <div class="text-5xl">📄</div>
+              <div>
+                <div class="text-xl">Score Matrix S</div>
+                <div class="text-sm opacity-90 mt-1 mono font-medium">shape = ℝ ^ ( D × N )</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="flex justify-center py-4"><div class="flex flex-col items-center"><div class="w-1 h-8 bg-gray-900 rounded-full"></div><div class="w-0 h-0" style="border-left:8px solid transparent;border-right:8px solid transparent;border-top:12px solid #111827;"></div></div></div>
+
+        <!-- PHASE 07: FILTERS -->
+        <div class="grid grid-cols-12 gap-4 items-center">
+          <div class="col-span-12 md:col-span-2">
+            <div class="bg-amber-100 text-amber-700 rounded-full px-3 py-1 inline-block text-xs font-extrabold uppercase tracking-wider mb-1">Phase 07</div>
+            <div class="text-base font-extrabold text-gray-900">過濾</div>
+            <div class="text-xs text-gray-500 mt-1">合格池 F<sub>t</sub> · 三重 AND</div>
+          </div>
+          <div class="col-span-12 md:col-span-10 grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div class="bg-amber-500 text-white rounded-2xl p-5 font-bold transition-all hover:scale-[1.02]" style="clip-path: polygon(8% 0, 92% 0, 100% 50%, 92% 100%, 8% 100%, 0 50%);">
+              <div class="text-3xl mb-2 text-center">💧</div>
+              <div class="text-center text-base">Liquidity</div>
+              <div class="text-xs opacity-90 mt-1 text-center font-medium mono">ADV ≥ 5×10⁷</div>
+            </div>
+            <div class="bg-amber-500 text-white rounded-2xl p-5 font-bold transition-all hover:scale-[1.02]" style="clip-path: polygon(8% 0, 92% 0, 100% 50%, 92% 100%, 8% 100%, 0 50%);">
+              <div class="text-3xl mb-2 text-center">💰</div>
+              <div class="text-center text-base">Min Price</div>
+              <div class="text-xs opacity-90 mt-1 text-center font-medium mono">C ≥ 10</div>
+            </div>
+            <div class="bg-amber-500 text-white rounded-2xl p-5 font-bold transition-all hover:scale-[1.02]" style="clip-path: polygon(8% 0, 92% 0, 100% 50%, 92% 100%, 8% 100%, 0 50%);">
+              <div class="text-3xl mb-2 text-center">🚫</div>
+              <div class="text-center text-base">Anti Limit-Up</div>
+              <div class="text-xs opacity-90 mt-1 text-center font-medium mono">ret &lt; 7%</div>
+            </div>
+          </div>
+        </div>
+        <div class="flex justify-center py-4"><div class="flex flex-col items-center"><div class="w-1 h-8 bg-gray-900 rounded-full"></div><div class="w-0 h-0" style="border-left:8px solid transparent;border-right:8px solid transparent;border-top:12px solid #111827;"></div></div></div>
+
+        <!-- PHASE 08: TOP-K SELECTION -->
+        <div class="grid grid-cols-12 gap-4 items-center">
+          <div class="col-span-12 md:col-span-2">
+            <div class="bg-emerald-100 text-emerald-700 rounded-full px-3 py-1 inline-block text-xs font-extrabold uppercase tracking-wider mb-1">Phase 08</div>
+            <div class="text-base font-extrabold text-gray-900">Top-K 選股</div>
+            <div class="text-xs text-gray-500 mt-1">argmax 取前 5 名</div>
+          </div>
+          <div class="col-span-12 md:col-span-10">
+            <div class="bg-emerald-500 text-white rounded-2xl p-7 font-extrabold flex items-center gap-5 transition-all hover:scale-[1.01]" style="border: 4px solid #047857;">
+              <div class="text-6xl">🎯</div>
+              <div class="flex-1">
+                <div class="text-2xl">Top-K Selection · K = 5</div>
+                <div class="text-sm opacity-90 mt-1 mono font-medium">𝒮_t = argmax over filtered pool · 1/5 capital each</div>
+              </div>
+              <div class="text-5xl font-black opacity-30">5</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Split connector -->
+        <div class="flex flex-col items-center py-2 mt-3">
+          <div class="text-xs uppercase tracking-wider text-gray-500 font-bold pb-1">split into 2 orders per pick</div>
+        </div>
+        <div class="grid grid-cols-12 gap-0 items-stretch relative">
+          <div class="col-span-6 flex justify-end pr-1">
+            <svg width="100%" height="40" viewBox="0 0 200 40" preserveAspectRatio="none" class="overflow-visible">
+              <path d="M 200 0 Q 200 25 100 40" stroke="#F43F5E" stroke-width="3" fill="none" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <div class="col-span-6 flex justify-start pl-1">
+            <svg width="100%" height="40" viewBox="0 0 200 40" preserveAspectRatio="none" class="overflow-visible">
+              <path d="M 0 0 Q 0 25 100 40" stroke="#3B82F6" stroke-width="3" fill="none" stroke-linecap="round"/>
+            </svg>
+          </div>
+        </div>
+
+        <!-- PHASE 09: ORDERS (SELL/BUY) -->
+        <div class="grid grid-cols-12 gap-4 items-center">
+          <div class="col-span-12 md:col-span-2">
+            <div class="bg-rose-100 text-rose-700 rounded-full px-3 py-1 inline-block text-xs font-extrabold uppercase tracking-wider mb-1">Phase 09</div>
+            <div class="text-base font-extrabold text-gray-900">訂單建構</div>
+            <div class="text-xs text-gray-500 mt-1">每檔配 1 sell + 1 buy</div>
+          </div>
+          <div class="col-span-12 md:col-span-10 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="bg-rose-500 text-white rounded-2xl p-6 font-bold transition-all hover:scale-[1.02]" style="border: 4px solid #9F1239;">
+              <div class="flex items-center gap-3 mb-3">
+                <div class="text-4xl">💸</div>
+                <div class="text-xl font-extrabold">SELL Side</div>
+              </div>
+              <div class="text-sm font-medium mono mb-2">price = floor_tick(H<sub>t+1</sub> − 1tk)</div>
+              <div class="text-xs opacity-90 font-medium">隔日全部脫手 · ≤ day high 才 fill</div>
+            </div>
+            <div class="bg-blue-500 text-white rounded-2xl p-6 font-bold transition-all hover:scale-[1.02]" style="border: 4px solid #1D4ED8;">
+              <div class="flex items-center gap-3 mb-3">
+                <div class="text-4xl">💵</div>
+                <div class="text-xl font-extrabold">BUY Side</div>
+              </div>
+              <div class="text-sm font-medium mono mb-2">price = ceil_tick(L<sub>t</sub> + 1tk)</div>
+              <div class="text-xs opacity-90 font-medium">1/5 capital each · ≥ day low 才 fill</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Merge connector -->
+        <div class="grid grid-cols-12 gap-0 items-stretch mt-2">
+          <div class="col-span-6 flex justify-end pr-1">
+            <svg width="100%" height="40" viewBox="0 0 200 40" preserveAspectRatio="none" class="overflow-visible">
+              <path d="M 200 0 Q 200 20 100 40" stroke="#F43F5E" stroke-width="3" fill="none" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <div class="col-span-6 flex justify-start pl-1">
+            <svg width="100%" height="40" viewBox="0 0 200 40" preserveAspectRatio="none" class="overflow-visible">
+              <path d="M 0 0 Q 0 20 100 40" stroke="#3B82F6" stroke-width="3" fill="none" stroke-linecap="round"/>
+            </svg>
+          </div>
+        </div>
+        <div class="flex flex-col items-center pb-2">
+          <div class="w-1 h-4 bg-gray-900 rounded-full"></div>
+          <div class="w-0 h-0" style="border-left:8px solid transparent;border-right:8px solid transparent;border-top:12px solid #111827;"></div>
+        </div>
+
+        <!-- PHASE 10: NCKU API -->
+        <div class="grid grid-cols-12 gap-4 items-center">
+          <div class="col-span-12 md:col-span-2">
+            <div class="bg-gray-100 text-gray-700 rounded-full px-3 py-1 inline-block text-xs font-extrabold uppercase tracking-wider mb-1">Phase 10</div>
+            <div class="text-base font-extrabold text-gray-900">送單</div>
+            <div class="text-xs text-gray-500 mt-1">官方平台結算</div>
+          </div>
+          <div class="col-span-12 md:col-span-10">
+            <div class="bg-gray-900 text-white rounded-2xl p-7 font-extrabold flex items-center gap-5 transition-all hover:scale-[1.01]" style="border: 4px solid #000;">
+              <div class="text-6xl">☁️</div>
+              <div class="flex-1">
+                <div class="text-2xl">NCKU Trading API</div>
+                <div class="text-sm opacity-90 mt-1 mono font-medium">POST /sim_stock/trading_api/buy · /sell</div>
+                <div class="text-xs opacity-75 mt-1 font-medium">13:00 截單 · 15:30 結算 · 16:00 公告</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Architecture explanations: per-phase narrative -->
+    <div class="mt-12">
+      <h3 class="text-2xl md:text-3xl font-extrabold text-white mb-3">逐 Phase 解說</h3>
+      <p class="text-gray-300 max-w-3xl mb-6 leading-relaxed">
+        把 10 個 phase 分成四個邏輯區塊講，每塊解釋它在做什麼、為什麼存在、技術細節是什麼。
+      </p>
+    </div>
+    <div class="grid md:grid-cols-2 gap-5 text-sm">
+      <div class="bg-white/5 rounded-xl p-6 border-l-4 border-emerald-500">
+        <div class="text-xs uppercase tracking-wider text-emerald-400 font-bold mb-2">Phase 01–02 · 資料收集 + 統一儲存</div>
+        <p class="text-gray-300 leading-relaxed mb-3">
+          資料分三路收：
+        </p>
+        <ul class="text-gray-300 leading-relaxed space-y-1.5 list-disc list-outside ml-5">
+          <li><span class="font-semibold text-white">yfinance batch</span>：每天 ~15:30 後跑 <code class="mono text-amber-200">update_parquet.py</code>，抓昨日全市場 OHLCV 並寫入 parquet。</li>
+          <li><span class="font-semibold text-white">TWSE MIS API</span>：實盤當天跑 inference 時，從台股即時 API 拿 intraday L/H/C（這樣才能在 13:00 前知道今日 L<sub>t</sub>）。</li>
+          <li><span class="font-semibold text-white">KMeans 概念股分群</span>：預先算好的 <code class="mono text-amber-200">.npz</code> 靜態檔，提供「相對於同概念股的動量」這個特徵的對照基準。</li>
+        </ul>
+        <p class="text-gray-300 leading-relaxed mt-3">
+          全部塞進同一個 <code class="mono text-amber-200">all_stocks.parquet</code>，
+          列式儲存方便後續高效切片（1957 codes × 1533 days）。
+        </p>
+      </div>
+      <div class="bg-white/5 rounded-xl p-6 border-l-4 border-blue-500">
+        <div class="text-xs uppercase tracking-wider text-blue-400 font-bold mb-2">Phase 03–04 · 特徵工程 + 打包</div>
+        <p class="text-gray-300 leading-relaxed mb-3">
+          20 個特徵分成 5 個族群（每個族群解釋不同市場行為）：
+        </p>
+        <ul class="text-gray-300 leading-relaxed space-y-1 list-disc list-outside ml-5">
+          <li><span class="font-semibold text-white">Momentum × 6</span>：5/10/20/60/120 日對數動能 + 同概念股相對動能。</li>
+          <li><span class="font-semibold text-white">Range / Vol × 5</span>：日內振幅、ATR、Garman-Klass、body-proportion 等波動指標。</li>
+          <li><span class="font-semibold text-white">OHLC Lag × 4</span>：今日 / 前日對昨收的對數變化（含最強訊號 dn_lag0）。</li>
+          <li><span class="font-semibold text-white">Liquidity × 2</span>：log_adv（成交額）、Amihud illiquidity。</li>
+          <li><span class="font-semibold text-white">Cross-Section Rank × 3</span>：當日截面 percentile rank。</li>
+        </ul>
+        <p class="text-gray-300 leading-relaxed mt-3">
+          全部打包成 3D tensor <code class="mono text-amber-200">X ∈ ℝ<sup>(D×N×20)</sup></code>，一次性載入記憶體。
+        </p>
+      </div>
+      <div class="bg-white/5 rounded-xl p-6 border-l-4 border-gray-400">
+        <div class="text-xs uppercase tracking-wider text-gray-300 font-bold mb-2">Phase 05–06 · 模型推論</div>
+        <p class="text-gray-300 leading-relaxed">
+          LGBM Booster 一次性 inference 整個 (D × N × 20) 張量，輸出分數矩陣
+          <code class="mono text-amber-200">S ∈ ℝ<sup>(D×N)</sup></code>。
+          LightGBM 對缺失值（NaN）原生友善，所以某些特徵在某些日期 / 個股缺失也不影響結果。
+          整個過程 &lt; 1 秒（因為樹模型的 inference 是常數時間查表，不像 Transformer 要過好幾層 attention）。
+          這個分數沒有單位、不是「明天會漲幾 %」，純粹是「相對排序的依據」。
+        </p>
+      </div>
+      <div class="bg-white/5 rounded-xl p-6 border-l-4 border-amber-500">
+        <div class="text-xs uppercase tracking-wider text-amber-400 font-bold mb-2">Phase 07 · 過濾（合格池）</div>
+        <p class="text-gray-300 leading-relaxed mb-2">
+          有了分數還不能直接選 Top-5，要先把「不適合下單」的股票剔除：
+        </p>
+        <ul class="text-gray-300 leading-relaxed space-y-1 list-disc list-outside ml-5">
+          <li>ADV<sub>20</sub> ≥ 5×10<sup>7</sup>（沒流動性的不能買）</li>
+          <li>C<sub>t</sub> ≥ 10（penny stock 的 tick 相對誤差太大）</li>
+          <li>當日漲幅 &lt; 7%（避開漲停）</li>
+        </ul>
+        <p class="text-gray-300 leading-relaxed mt-3">
+          三條都通過才進入合格池 F<sub>t</sub>，三條都是 <span class="font-bold">AND</span> 關係。
+        </p>
+      </div>
+      <div class="bg-white/5 rounded-xl p-6 border-l-4 border-emerald-500 md:col-span-2">
+        <div class="text-xs uppercase tracking-wider text-emerald-400 font-bold mb-2">Phase 08–10 · 選股 → 訂單分流 → 送單</div>
+        <p class="text-gray-300 leading-relaxed mb-3">
+          這是策略的「執行端」。Phase 08 從合格池裡 argsort 取分數最高的 5 檔，這就是今天要買的清單。
+          接著流程<span class="font-semibold text-white">分裂成兩條並行路徑</span>：
+        </p>
+        <div class="grid md:grid-cols-2 gap-3 mb-3">
+          <div class="bg-rose-500/20 rounded-lg p-4 border border-rose-500/40">
+            <div class="text-rose-300 font-bold mb-1">💸 SELL Side（玫紅）</div>
+            <p class="text-gray-300 text-xs leading-relaxed">
+              把<span class="font-semibold text-white">昨天買的 5 檔</span>全部出清，
+              掛單 @ <code class="mono text-amber-200">floor_tick(H<sub>t</sub> − 1 tick)</code>。
+              這是<span class="font-semibold">強制脫手</span>，無論漲跌都要賣。
+            </p>
+          </div>
+          <div class="bg-blue-500/20 rounded-lg p-4 border border-blue-500/40">
+            <div class="text-blue-300 font-bold mb-1">💵 BUY Side（藍）</div>
+            <p class="text-gray-300 text-xs leading-relaxed">
+              把<span class="font-semibold text-white">今天 Phase 08 選出來的 5 檔</span>各買 1/5 資金，
+              掛單 @ <code class="mono text-amber-200">ceil_tick(L<sub>t</sub> + 1 tick)</code>。
+            </p>
+          </div>
+        </div>
+        <p class="text-gray-300 leading-relaxed">
+          兩條路徑的訂單最後在 Phase 10 同時送到 NCKU API，13:00 截單、15:30 結算、16:00 公告結果。
+          每個工作日重複一次。
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============== KEY DECISIONS ============== -->
+<section class="bg-white">
+  <div class="max-w-7xl mx-auto px-6 py-20">
+    <div class="text-xs font-semibold tracking-[0.2em] uppercase text-blue-500 mb-4">04 · Key Decisions</div>
+    <h2 class="text-4xl md:text-5xl font-extrabold mb-6 max-w-3xl">六個關鍵設計取捨。</h2>
+    <p class="text-gray-600 max-w-3xl mb-12 text-lg leading-relaxed">
+      設計這套策略時，每個技術選項背後都有別的選項可以選。下面六張卡記錄了
+      <span class="font-semibold text-gray-900">為什麼最後選現在這個版本</span>，
+      每個決定都是試錯後留下的結果，不是憑空寫出來的。
+    </p>
+
+    <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div class="bg-blue-50 rounded-lg p-8 group cursor-default transition-all duration-200 hover:scale-[1.02] hover:bg-blue-100">
+        <div class="h-14 w-14 rounded-full bg-blue-500 text-white flex items-center justify-center mb-6 transition-transform duration-200 group-hover:scale-110">
+          <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+        </div>
+        <div class="text-xs font-semibold tracking-[0.2em] uppercase text-gray-500 mb-2">Choice 1</div>
+        <h3 class="text-2xl font-bold mb-3">為何用 LightGBM 而不是 Transformer？</h3>
+        <p class="text-gray-600 leading-relaxed text-sm">
+          一開始是用 DSPO Transformer 試 spread 預測，但短週期股價訊號雜訊極多，
+          深度模型很容易 overfit 在訓練期。LightGBM 三大優勢正好對到我們的痛點：
+          (1) 對缺失值 NaN 原生友善，特徵生成不需要 imputation；
+          (2) 全市場 1957 檔 × 600 天的 inference 整個跑完 &lt; 1 秒，比 Transformer 快一個數量級；
+          (3) 樹模型本身有正則化（min_child_samples、bagging），對 noisy data 比較穩健。
+        </p>
+      </div>
+
+      <div class="bg-emerald-50 rounded-lg p-8 group cursor-default transition-all duration-200 hover:scale-[1.02] hover:bg-emerald-100">
+        <div class="h-14 w-14 rounded-full bg-emerald-500 text-white flex items-center justify-center mb-6 transition-transform duration-200 group-hover:scale-110">
+          <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="9" y2="18"/></svg>
+        </div>
+        <div class="text-xs font-semibold tracking-[0.2em] uppercase text-gray-500 mb-2">Choice 2</div>
+        <h3 class="text-2xl font-bold mb-3">為何用 LambdaRank 而不是回歸 (regression)？</h3>
+        <p class="text-gray-600 leading-relaxed text-sm">
+          MSE 回歸會把預測精度的力氣分散在「全市場每一檔股票」上。
+          但實際下單只挑 Top-5，後 1900 多檔的預測準不準根本無關緊要。
+          LambdaRank 把訓練梯度集中在「兩兩比較哪個排名更前」，
+          再透過 truncation_level=5 把 NDCG 截斷在前 5 名 ──
+          字面意思就是<span class="font-semibold text-gray-900">「梯度反向傳播時，只有
+          會影響到 Top-5 名單的錯誤才會被懲罰」</span>。
+          這是把 loss function 跟業務目標完美對齊。
+        </p>
+      </div>
+
+      <div class="bg-amber-50 rounded-lg p-8 group cursor-default transition-all duration-200 hover:scale-[1.02] hover:bg-amber-100">
+        <div class="h-14 w-14 rounded-full bg-amber-500 text-white flex items-center justify-center mb-6 transition-transform duration-200 group-hover:scale-110">
+          <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        </div>
+        <div class="text-xs font-semibold tracking-[0.2em] uppercase text-gray-500 mb-2">Choice 3</div>
+        <h3 class="text-2xl font-bold mb-3">為何回測時間對齊用 Setup B？</h3>
+        <p class="text-gray-600 leading-relaxed text-sm">
+          常見的回測對齊有兩種：A 是「用昨日特徵預測今日」，B 是「用今日特徵（含 L<sub>t</sub>）預測明日 H<sub>t+1</sub>」。
+          很多人會直覺選 A 以為比較保守，但對我們的 setup 反而<span class="font-semibold text-gray-900">是錯的</span>──
+          NCKU 平台 13:00 前才下單，那時 today's intraday low 已經透過 API 揭露，是合法可用資訊。
+          選 B 才能真實反映實盤可取用的訊號。回測程式裡 <code class="mono">signal_idx = today_idx</code> 即是這個對齊。
+        </p>
+      </div>
+
+      <div class="bg-rose-50 rounded-lg p-8 group cursor-default transition-all duration-200 hover:scale-[1.02] hover:bg-rose-100">
+        <div class="h-14 w-14 rounded-full bg-rose-500 text-white flex items-center justify-center mb-6 transition-transform duration-200 group-hover:scale-110">
+          <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg>
+        </div>
+        <div class="text-xs font-semibold tracking-[0.2em] uppercase text-gray-500 mb-2">Choice 4</div>
+        <h3 class="text-2xl font-bold mb-3">為何最後選 K = 5（而不是更小或更大）？</h3>
+        <p class="text-gray-600 leading-relaxed text-sm">
+          我們系統性掃了 K = 1, 2, 3, 5, 7, 10, 15, 20, 30, 50, 100 共 11 種選擇（後段 §06 詳細）。
+          K=2 報酬最高（+16.74% / cycle）但只有 2 檔分散，單檔失敗影響大；
+          K=7 Sharpe 最高 (97.79) 但報酬比 K=5 略低；
+          K=5 在<span class="font-semibold text-gray-900">報酬與 Sharpe 兩個指標都進入前 4 名</span>，
+          而且 5 檔分散度合理、單檔影響可控，是穩健折衷。
+        </p>
+      </div>
+
+      <div class="bg-gray-100 rounded-lg p-8 group cursor-default transition-all duration-200 hover:scale-[1.02] hover:bg-gray-200">
+        <div class="h-14 w-14 rounded-full bg-gray-900 text-white flex items-center justify-center mb-6 transition-transform duration-200 group-hover:scale-110">
+          <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        </div>
+        <div class="text-xs font-semibold tracking-[0.2em] uppercase text-gray-500 mb-2">Choice 5</div>
+        <h3 class="text-2xl font-bold mb-3">為何把特徵從 43 個砍到 20 個？</h3>
+        <p class="text-gray-600 leading-relaxed text-sm">
+          初版用 43 個特徵（涵蓋短中長期動量、振幅、流動性、季節性等等）。
+          訓練好後看 LGBM 的 gain importance ── 發現
+          <span class="font-semibold text-gray-900">前 20 個特徵已經占整體 gain 的 99%+</span>，
+          後 23 個幾乎沒貢獻。乾脆砍掉，換得：訓練速度快一倍、推論更穩定、減少 overfit 風險。
+          砍完後在 holdout 期 NDCG 不降反升，證實這 23 個是雜訊不是訊號。
+        </p>
+      </div>
+
+      <div class="bg-blue-50 rounded-lg p-8 group cursor-default transition-all duration-200 hover:scale-[1.02] hover:bg-blue-100">
+        <div class="h-14 w-14 rounded-full bg-blue-500 text-white flex items-center justify-center mb-6 transition-transform duration-200 group-hover:scale-110">
+          <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 17 4-4 4 4 6-6"/></svg>
+        </div>
+        <div class="text-xs font-semibold tracking-[0.2em] uppercase text-gray-500 mb-2">Choice 6</div>
+        <h3 class="text-2xl font-bold mb-3">為何實盤要加 ±1 tick margin？</h3>
+        <p class="text-gray-600 leading-relaxed text-sm">
+          NCKU 平台規則：委託價必須落在當日 [L, H] 區間才會 fill。
+          如果掛在剛好的 L<sub>t</sub>，遇到雜訊或撮合順序問題就可能 miss。
+          所以實盤改成「買價 = L<sub>t</sub> + 1 tick」、「賣價 = H<sub>t+1</sub> − 1 tick」──
+          犧牲一點 spread 換取 fill rate。tick 大小依 TWSE 規則隨價格區間變化（0.01~5.00），
+          程式內用 snap-to-tick 函式自動處理。
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============== FEATURE IMPORTANCE ============== -->
+<section id="features" class="bg-amber-500 text-white relative overflow-hidden">
+  <div class="absolute -top-20 -left-20 w-72 h-72 shape-circle bg-white/10"></div>
+  <div class="absolute -bottom-32 right-12 w-96 h-96 shape-square bg-white/5 rotate-12"></div>
+
+  <div class="relative max-w-7xl mx-auto px-6 py-24">
+    <div class="text-xs font-semibold tracking-[0.2em] uppercase text-amber-100 mb-4">05 · Feature Importance</div>
+    <h2 class="text-4xl md:text-5xl font-extrabold mb-6">模型到底在學什麼？</h2>
+    <p class="text-amber-50 max-w-3xl mb-6 text-lg leading-relaxed">
+      LightGBM 訓練完後，每個特徵會記錄一個 <span class="font-bold">gain</span> 數值
+      ── 代表「這個特徵在所有決策樹中被拿來分裂節點時，總共降低了多少 loss」。
+      把所有特徵的 gain 加總正規化後，就得到下圖每個特徵的「相對重要性百分比」。
+    </p>
+    <p class="text-amber-50 max-w-3xl mb-12 text-lg leading-relaxed">
+      結果出乎意料地集中：<span class="font-bold">前 3 個特徵承擔了 85.43% 的 gain</span>，
+      其中 <code class="mono bg-white/10 px-2 py-0.5 rounded">dn_lag0</code> 一個就拿走 52.77%。
+      換言之，模型很大程度上是在學「今天跌得多深」這件事 ── 這也直接驗證了
+      「跌深反彈」是這個策略的主要 alpha 來源。
+    </p>
+
+    <!-- Plotly chart -->
+    <div class="bg-white text-gray-900 rounded-lg p-6">
+      <div id="feature-importance-chart" style="width:100%;height:600px;"></div>
+    </div>
+
+    <!-- Top 3 features explanation -->
+    <div class="mt-12">
+      <div class="text-white text-2xl font-bold mb-3">前 3 個特徵的細節</div>
+      <p class="text-amber-50 mb-6 max-w-3xl leading-relaxed">
+        既然這三個特徵承擔了 85% 的解釋力，值得仔細看看每個是什麼、為什麼重要。
+        三個都是「日內價格行為」相關，符合「跌深反彈」這個 alpha 的物理直覺：
+        模型靠看今日跌幅 + 今日報酬 + 振幅 percentile 三個訊號就能定位反彈標的。
+      </p>
+    </div>
+    <div class="grid md:grid-cols-3 gap-6">
+      <div class="bg-white text-gray-900 rounded-lg p-6">
+        <div class="flex items-center justify-between mb-3">
+          <div class="text-xs font-semibold tracking-wider text-rose-500">RANK #1 · 52.77%</div>
+          <div class="mono text-sm text-gray-400">OHLC Lag</div>
+        </div>
+        <div class="mono text-xl font-bold mb-3">dn_lag0</div>
+        <div class="bg-gray-50 rounded p-3 mb-3 text-center mono text-sm">
+          dn_lag0<sub>i,t</sub> = log(<span class="frac"><span class="num">L<sub>i,t</sub></span><span class="den">C<sub>i,t−1</sub></span></span>)
+        </div>
+        <p class="text-sm text-gray-600 leading-relaxed">
+          今日最低相對昨收的對數變化。負值越大 = 今天跌得越深 = 隔日反彈空間越大。
+        </p>
+      </div>
+      <div class="bg-white text-gray-900 rounded-lg p-6">
+        <div class="flex items-center justify-between mb-3">
+          <div class="text-xs font-semibold tracking-wider text-rose-500">RANK #2 · 18.65%</div>
+          <div class="mono text-sm text-gray-400">OHLC Lag</div>
+        </div>
+        <div class="mono text-xl font-bold mb-3">ret_lag0</div>
+        <div class="bg-gray-50 rounded p-3 mb-3 text-center mono text-sm">
+          ret_lag0<sub>i,t</sub> = log(<span class="frac"><span class="num">C<sub>i,t</sub></span><span class="den">C<sub>i,t−1</sub></span></span>)
+        </div>
+        <p class="text-sm text-gray-600 leading-relaxed">
+          今日對數報酬。提供整體趨勢方向資訊，與 dn_lag0 配合判斷「跌深 vs 收紅」。
+        </p>
+      </div>
+      <div class="bg-white text-gray-900 rounded-lg p-6">
+        <div class="flex items-center justify-between mb-3">
+          <div class="text-xs font-semibold tracking-wider text-rose-500">RANK #3 · 14.01%</div>
+          <div class="mono text-sm text-gray-400">Cross-Section Rank</div>
+        </div>
+        <div class="mono text-xl font-bold mb-3">rank_range_pct</div>
+        <div class="bg-gray-50 rounded p-3 mb-3 text-center mono text-sm">
+          rank(<span class="frac"><span class="num">H − L</span><span class="den">C</span></span>)<sub>t</sub>
+        </div>
+        <p class="text-sm text-gray-600 leading-relaxed">
+          當日振幅 (H−L)/C 在全市場的 percentile rank。捕捉「波動相對活躍程度」。
+        </p>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ============== K SWEEP ============== -->
+<section class="bg-white">
+  <div class="max-w-7xl mx-auto px-6 py-24">
+    <div class="text-xs font-semibold tracking-[0.2em] uppercase text-blue-500 mb-4">06 · K Sweep</div>
+    <h2 class="text-4xl md:text-5xl font-extrabold mb-6 max-w-3xl">該選幾檔？分散 vs 集中。</h2>
+    <p class="text-gray-600 max-w-3xl mb-6 text-lg leading-relaxed">
+      LGBM 排出分數後，每天要選前幾名來買，這個「幾名」就是超參數 K。
+      理論上 K 越小報酬越高（只挑最好的 1~2 檔來重壓），
+      但 K 越小分散度越差、單檔失敗影響越大。為了找出最佳折衷點，
+      我們把 K 當作可掃描的超參數來實驗。
+    </p>
+    <p class="text-gray-600 max-w-3xl mb-12 text-lg leading-relaxed">
+      在 2026-01 ~ 2026-04 區間，用 cumulative_walkforward backtest（每日 diff-based 再平衡）
+      跑 11 個 K 值（1, 2, 3, 5, 7, 10, 15, 20, 30, 50, 100）。
+      評估指標除了總報酬，更重要的是
+      <span class="font-semibold text-gray-900">cycle return</span>──
+      單日複利報酬的幾何平均（換算公式 <code class="mono">cycle = (1 + total)<sup>1/N</sup> − 1</code>，
+      N ≈ 84 個交易日），代表「平均每天賺幾 %」。
+      之所以看 cycle 而不只看總報酬，是因為總報酬會被 N 倍複利放大到誇張的數字（譬如 K=1 總報酬達 360 萬 %），
+      cycle return 才能公平比較不同 K 值的單期生產力。
+    </p>
+
+    <div class="grid lg:grid-cols-3 gap-6 mb-10">
+      <div class="bg-rose-500 text-white rounded-lg p-6">
+        <div class="text-xs uppercase tracking-wider text-rose-100 mb-2 font-semibold">Best Total Return</div>
+        <div class="text-3xl font-extrabold tabular-nums mb-1">K = 2</div>
+        <div class="text-sm text-rose-50">cycle = +16.74% / day</div>
+      </div>
+      <div class="bg-amber-500 text-white rounded-lg p-6">
+        <div class="text-xs uppercase tracking-wider text-amber-100 mb-2 font-semibold">Best Sharpe</div>
+        <div class="text-3xl font-extrabold tabular-nums mb-1">K = 7</div>
+        <div class="text-sm text-amber-50">Sharpe = 97.79</div>
+      </div>
+      <div class="bg-blue-500 text-white rounded-lg p-6">
+        <div class="text-xs uppercase tracking-wider text-blue-100 mb-2 font-semibold">Chosen (Balanced)</div>
+        <div class="text-3xl font-extrabold tabular-nums mb-1">K = 5</div>
+        <div class="text-sm text-blue-50">cycle = +16.12% · Sharpe = 95.33</div>
+      </div>
+    </div>
+
+    <!-- Plotly K sweep chart -->
+    <div class="bg-gray-50 rounded-lg p-6">
+      <div id="k-sweep-chart" style="width:100%;height:500px;"></div>
+    </div>
+
+    <p class="text-sm text-gray-500 mt-4 leading-relaxed">
+      Cycle return = (1 + total_return)<sup>1/N<sub>cycles</sub></sup> − 1，N<sub>cycles</sub> ≈ 84 個交易日。
+      K 越小報酬越高但變異也大；K=2 雖最高但只有 2 檔分散，單檔下單失敗會大幅影響。K=5 取折衷。
+    </p>
+  </div>
+</section>
+
+<!-- ============== BASELINE COMPARISON ============== -->
+<section id="baseline" class="bg-rose-500 text-white relative overflow-hidden">
+  <div class="absolute -top-32 -left-24 w-[420px] h-[420px] shape-circle bg-white/10"></div>
+  <div class="absolute bottom-12 right-20 w-32 h-32 shape-square bg-amber-400/30 rotate-12"></div>
+  <div class="absolute -bottom-20 -right-10 w-72 h-72 shape-circle bg-blue-500/20"></div>
+
+  <div class="relative max-w-7xl mx-auto px-6 py-24">
+    <div class="text-xs font-semibold tracking-[0.2em] uppercase text-rose-100 mb-4">07 · Baseline Comparison</div>
+    <h2 class="text-4xl md:text-5xl font-extrabold mb-6 max-w-4xl">LGBM 真的有貢獻嗎？對照組驗證。</h2>
+    <p class="text-rose-50 max-w-3xl mb-6 text-lg leading-relaxed">
+      LGBM 4 個月平均 +267% 看起來很驚人，但這個數字有個盲點：
+      <span class="font-bold text-white">如果這個策略本身（買今日 L、賣明日 H、每日全脫手）就有偏誤</span>，
+      那麼即使隨便挑 5 檔來買也會賺，LGBM 只是錦上添花。
+      我們需要驗證：LGBM 真的有貢獻，而不只是搭順風車。
+    </p>
+    <p class="text-rose-50 max-w-3xl mb-12 text-lg leading-relaxed">
+      做法：保留所有條件不變（K=5、買賣邏輯、過濾池、結算引擎），<span class="font-bold text-white">只把
+      「LGBM 排序 Top-5」換成「從合格池均勻隨機抽 5 檔」</span>，
+      其他完全一樣。如此一來兩組的差異就是 LGBM 排序的純貢獻。
+      隨機選股會因種子而變，所以每月跑 30 個 seeds 取分佈，再用 z-score 衡量 LGBM 比 random 好多少標準差。
+    </p>
+
+    <!-- Design rationale -->
+    <div class="bg-white text-gray-900 rounded-lg p-8 mb-10">
+      <h3 class="text-2xl font-bold mb-6">Baseline 設計：唯一變因 = 選股方式</h3>
+      <p class="text-gray-700 leading-relaxed mb-6">
+        為了精確衡量 LGBM 排序的<span class="font-semibold">純貢獻</span>，
+        baseline 與 LGBM 策略所有條件保持一致，只把 <code class="bg-gray-100 px-2 py-0.5 rounded mono text-sm">select_stock()</code>
+        從「依分數排序取 Top-K」換成「從合格池均勻隨機抽 K 檔」：
+      </p>
+
+      <div class="grid md:grid-cols-2 gap-5 mb-6">
+        <div class="rounded-md border-2 border-blue-500 p-5">
+          <div class="text-xs uppercase tracking-wider text-blue-500 font-bold mb-3">LGBM 策略（實驗組）</div>
+          <div class="math-block text-xs">
+            S<sub>t</sub> &nbsp;=&nbsp; argmax<sub>|S|=K,&nbsp;S⊆F<sub>t</sub></sub>&nbsp;Σ<sub>i∈S</sub>&nbsp;s<sub>i,t</sub>
+          </div>
+          <p class="text-sm text-gray-600 mt-3">取分數最高的 5 檔（NDCG@5 排序）</p>
+        </div>
+        <div class="rounded-md border-2 border-rose-500 p-5">
+          <div class="text-xs uppercase tracking-wider text-rose-500 font-bold mb-3">Random 策略（對照組）</div>
+          <div class="math-block text-xs">
+            S<sub>t</sub> &nbsp;~&nbsp; Uniform( C(F<sub>t</sub>, K) )
+          </div>
+          <p class="text-sm text-gray-600 mt-3">從合格池均勻隨機無放回抽 5 檔</p>
+        </div>
+      </div>
+
+      <div class="bg-gray-50 rounded-md p-5 mb-6">
+        <div class="text-xs uppercase tracking-wider text-gray-500 font-bold mb-3">完全相同的條件 (Identical Setup)</div>
+        <div class="grid md:grid-cols-2 gap-x-8 gap-y-2 text-sm text-gray-700">
+          <div class="flex justify-between"><span>K（檔數）</span><span class="mono font-semibold">5</span></div>
+          <div class="flex justify-between"><span>再平衡頻率</span><span class="mono font-semibold">1 day</span></div>
+          <div class="flex justify-between"><span>每檔資金</span><span class="mono font-semibold">1/5 = 20%</span></div>
+          <div class="flex justify-between"><span>初始資金</span><span class="mono font-semibold">100,000,000</span></div>
+          <div class="flex justify-between"><span>買入價</span><span class="mono font-semibold">ceil_tick(L<sub>t</sub>)</span></div>
+          <div class="flex justify-between"><span>賣出價</span><span class="mono font-semibold">floor_tick(H<sub>t+1</sub>)</span></div>
+          <div class="flex justify-between"><span>合格池 F<sub>t</sub></span><span class="mono font-semibold">ADV≥50M, C≥10, r&lt;7%</span></div>
+          <div class="flex justify-between"><span>結算引擎</span><span class="mono font-semibold">NCKU rule_game</span></div>
+        </div>
+      </div>
+
+      <div class="bg-blue-50 rounded-md p-5 border-l-4 border-blue-500">
+        <div class="text-xs uppercase tracking-wider text-blue-500 font-bold mb-2">統計處理</div>
+        <p class="text-sm text-gray-700 leading-relaxed">
+          random 結果會因種子而變動，所以每月跑 <span class="font-bold text-gray-900">30 個獨立 seeds</span>
+          （seed = 0, 1, ..., 29）取分佈：mean、std、median、min、max。
+          再用 z-score 衡量 LGBM 的提升 <code class="math">z = (R<sub>LGBM</sub> − mean<sub>rand</sub>) / σ<sub>rand</sub></code>。
+        </p>
+      </div>
+    </div>
+
+    <!-- Plotly: Box plot -->
+    <div class="bg-white rounded-lg p-6 mb-10">
+      <div class="text-xs uppercase tracking-wider text-gray-500 font-bold mb-2">RANDOM SEED DISTRIBUTION</div>
+      <h3 class="text-xl font-bold text-gray-900 mb-4">30 個 seed 的報酬分佈 vs LGBM 單次結果</h3>
+      <div id="baseline-box-chart" style="width:100%;height:500px;"></div>
+      <p class="text-xs text-gray-500 mt-3">
+        ★ = LGBM 結果（單次決定性）。盒鬚範圍為 random 的 25-75 百分位 + 全距 (min~max)。
+      </p>
+    </div>
+
+    <!-- Comparison table -->
+    <div class="bg-white text-gray-900 rounded-lg border-2 border-gray-900 mb-10 overflow-x-auto">
+      <table class="w-full text-sm" style="min-width: 760px;">
+        <thead class="bg-gray-900 text-white uppercase tracking-wider text-xs">
+          <tr>
+            <th class="px-4 py-4 text-left font-semibold whitespace-nowrap">月份</th>
+            <th class="px-4 py-4 text-right font-semibold whitespace-nowrap">Random mean ± std</th>
+            <th class="px-4 py-4 text-right font-semibold whitespace-nowrap">Random median</th>
+            <th class="px-4 py-4 text-right font-semibold whitespace-nowrap">Random max</th>
+            <th class="px-4 py-4 text-right font-semibold whitespace-nowrap">LGBM</th>
+            <th class="px-4 py-4 text-right font-semibold whitespace-nowrap">Lift (pp)</th>
+            <th class="px-4 py-4 text-right font-semibold whitespace-nowrap">z-score</th>
+          </tr>
+        </thead>
+        <tbody class="mono divide-y-2 divide-gray-200">
+          <tr class="bg-white">
+            <td class="px-4 py-4 font-bold">2026-01</td>
+            <td class="px-4 py-4 text-right text-rose-500">+125.68% ± 14.28%</td>
+            <td class="px-4 py-4 text-right text-gray-600">+125.70%</td>
+            <td class="px-4 py-4 text-right text-gray-600">+152.12%</td>
+            <td class="px-4 py-4 text-right text-blue-500 font-bold">+296.18%</td>
+            <td class="px-4 py-4 text-right text-emerald-600 font-bold">+170.50</td>
+            <td class="px-4 py-4 text-right text-emerald-600 font-bold">11.94σ</td>
+          </tr>
+          <tr class="bg-gray-50">
+            <td class="px-4 py-4 font-bold">2026-02</td>
+            <td class="px-4 py-4 text-right text-rose-500">+60.79% ± 7.11%</td>
+            <td class="px-4 py-4 text-right text-gray-600">+58.80%</td>
+            <td class="px-4 py-4 text-right text-gray-600">+79.93%</td>
+            <td class="px-4 py-4 text-right text-blue-500 font-bold">+134.65%</td>
+            <td class="px-4 py-4 text-right text-emerald-600 font-bold">+73.86</td>
+            <td class="px-4 py-4 text-right text-emerald-600 font-bold">10.39σ</td>
+          </tr>
+          <tr class="bg-white">
+            <td class="px-4 py-4 font-bold">2026-03</td>
+            <td class="px-4 py-4 text-right text-rose-500">+129.86% ± 14.47%</td>
+            <td class="px-4 py-4 text-right text-gray-600">+129.53%</td>
+            <td class="px-4 py-4 text-right text-gray-600">+163.18%</td>
+            <td class="px-4 py-4 text-right text-blue-500 font-bold">+333.42%</td>
+            <td class="px-4 py-4 text-right text-emerald-600 font-bold">+203.56</td>
+            <td class="px-4 py-4 text-right text-emerald-600 font-bold">14.07σ</td>
+          </tr>
+          <tr class="bg-gray-50">
+            <td class="px-4 py-4 font-bold">2026-04</td>
+            <td class="px-4 py-4 text-right text-rose-500">+155.82% ± 20.07%</td>
+            <td class="px-4 py-4 text-right text-gray-600">+153.82%</td>
+            <td class="px-4 py-4 text-right text-gray-600">+214.17%</td>
+            <td class="px-4 py-4 text-right text-blue-500 font-bold">+303.76%</td>
+            <td class="px-4 py-4 text-right text-emerald-600 font-bold">+147.94</td>
+            <td class="px-4 py-4 text-right text-emerald-600 font-bold">7.37σ</td>
+          </tr>
+          <tr class="bg-gray-900 text-white">
+            <td class="px-4 py-4 font-bold">平均</td>
+            <td class="px-4 py-4 text-right">+118.04% ± 13.98%</td>
+            <td class="px-4 py-4 text-right">+116.96%</td>
+            <td class="px-4 py-4 text-right">+152.35%</td>
+            <td class="px-4 py-4 text-right text-amber-300 font-bold">+267.00%</td>
+            <td class="px-4 py-4 text-right text-amber-300 font-bold">+148.96</td>
+            <td class="px-4 py-4 text-right text-amber-300 font-bold">10.94σ</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Findings -->
+    <div class="mt-2 mb-6">
+      <h3 class="text-2xl font-bold text-white mb-3">兩個關鍵發現</h3>
+      <p class="text-rose-50 max-w-3xl leading-relaxed">
+        把實驗組（LGBM）跟對照組（random）一比，可以同時得到兩個對策略理解極為重要的洞察：
+        既揭露了模擬平台的「天然偏誤」，也定量了 LGBM 模型的「真實 alpha」。
+      </p>
+    </div>
+    <div class="grid md:grid-cols-2 gap-6">
+      <div class="bg-white text-gray-900 rounded-lg p-7">
+        <div class="h-12 w-12 rounded-full bg-rose-500 text-white flex items-center justify-center font-extrabold text-xl mb-4">!</div>
+        <h3 class="text-xl font-bold mb-3">發現 1：策略本身就有偏誤</h3>
+        <p class="text-gray-600 leading-relaxed text-sm mb-3">
+          隨機選股 4 個月平均也賺 <span class="font-bold text-rose-500">+118%</span>。
+          這個數字嚇人 ── 它說明「買 L<sub>t</sub> → 賣 H<sub>t+1</sub>」這個策略本身，
+          在 NCKU rule_game 的 perfect-fill 假設下天然有正期望值，連抽籤都能贏。
+        </p>
+        <p class="text-gray-600 leading-relaxed text-sm">
+          原因：模擬平台假設「只要委託價落在 [L, H] 就 100% 成交」。
+          現實中，要剛好掛在 L 買到、剛好掛在 H 賣出，幾乎不可能。
+          所以這個 +118% 是「上限」，實盤會被滑點 / 未成交 / 部分成交大幅縮水。
+        </p>
+      </div>
+      <div class="bg-white text-gray-900 rounded-lg p-7">
+        <div class="h-12 w-12 rounded-full bg-blue-500 text-white flex items-center justify-center font-extrabold text-xl mb-4">✓</div>
+        <h3 class="text-xl font-bold mb-3">發現 2：LGBM 的真實 alpha</h3>
+        <p class="text-gray-600 leading-relaxed text-sm mb-3">
+          LGBM 比 random 平均多 <span class="font-bold text-blue-500">+148.96pp</span>，
+          四個月 z-score 全部 ≥ 7σ（最高 14σ）。在統計上，
+          這代表「LGBM 不是運氣好抽到好月份，是系統性贏過 random」。
+        </p>
+        <p class="text-gray-600 leading-relaxed text-sm">
+          意義：這個 +148.96pp 才是「模型」的真實價值。它對應的是 LGBM 排出的 Top-5
+          相比隨機 5 檔的 spread 差異 ── 這部分相對穩固，因為實盤即使部分成交，
+          排得好的 5 檔仍系統性勝過隨機 5 檔。
+        </p>
+      </div>
+    </div>
+
+    <!-- Decomposition -->
+    <div class="mt-10 bg-white text-gray-900 rounded-lg p-7">
+      <h3 class="text-xl font-bold mb-4">把總報酬拆成兩部份</h3>
+      <p class="text-sm text-gray-600 mb-6">
+        平均來看，LGBM 的 +267% 報酬可以拆解為「策略本身的 perfect-fill 偏誤」 + 「LGBM 排序帶來的 alpha」：
+      </p>
+      <div class="flex h-16 rounded-md overflow-hidden border-2 border-gray-900">
+        <div class="bg-rose-400 text-white flex items-center justify-center font-bold text-xs md:text-sm px-2 text-center min-w-0" style="width: 44.2%;">
+          策略偏誤 +118%
+        </div>
+        <div class="bg-blue-500 text-white flex items-center justify-center font-bold text-xs md:text-sm px-2 text-center min-w-0" style="width: 55.8%;">
+          LGBM 排序 alpha +149pp
+        </div>
+      </div>
+      <div class="flex justify-between text-xs text-gray-500 mt-2 mono">
+        <span>0%</span>
+        <span>+267% 平均總報酬</span>
+      </div>
+      <p class="text-xs text-gray-500 mt-4 leading-relaxed">
+        實盤上線時，紅色「策略偏誤」會因為 fill rate &lt; 100% 而大幅縮水（限價單可能掛不到 L<sub>t</sub> 那麼低）。
+        藍色「LGBM 排序 alpha」相對穩固，因為 fill rate 受影響的是「成交與否」而非「排序好壞」。
+      </p>
+    </div>
+
+  </div>
+</section>
+
+<!-- ============== EVALUATION TIMELINE ============== -->
+<section id="evaluation" class="bg-emerald-500 text-white relative overflow-hidden">
+  <div class="absolute -top-32 right-12 w-96 h-96 shape-circle bg-white/10"></div>
+  <div class="absolute bottom-0 -left-20 w-72 h-72 shape-square bg-amber-400/20 -rotate-12"></div>
+
+  <div class="relative max-w-7xl mx-auto px-6 py-24">
+    <div class="text-xs font-semibold tracking-[0.2em] uppercase text-emerald-100 mb-4">08 · Evaluation Methodology</div>
+    <h2 class="text-4xl md:text-5xl font-extrabold mb-6 max-w-4xl">怎麼判斷模型有沒有真的學到東西？</h2>
+    <p class="text-emerald-50 max-w-3xl mb-12 text-lg leading-relaxed">
+      機器學習最大的陷阱是「模型在訓練資料看起來很神，上線後變廢」。
+      原因常常是 leakage（資料洩漏）、overfit（過擬合）或評估指標選錯。
+      為了避免，我們把所有資料分成<span class="font-bold text-white">三段時間區間</span>，
+      每段角色不同；模型只看得到該看的區間，整個流程做到完全 out-of-sample。
+    </p>
+
+    <div class="bg-white text-gray-900 rounded-lg p-8 md:p-10 mb-10">
+      <h3 class="text-2xl font-bold mb-3">時間軸切割：訓練 / 驗證 / 驗收</h3>
+      <p class="text-gray-600 mb-6 text-sm leading-relaxed">
+        2020-04 到 2026-04 大約 6.2 年資料，按時間順序切成三段。
+        早期占比最大（給模型學歷史 pattern），中期是調參驗證期，最近期保留給最終驗收。
+      </p>
+      <div class="flex items-stretch h-24 rounded-md overflow-hidden border-2 border-gray-900">
+        <div class="bg-blue-500 text-white flex-[63] flex flex-col justify-center px-6">
+          <div class="text-xs uppercase tracking-wider text-blue-100 font-semibold">TRAIN</div>
+          <div class="font-bold text-lg">2020-04-01 ~ 2025-06-30</div>
+          <div class="text-xs text-blue-50 mt-1">~5.2 年 · 1300 個交易日</div>
+        </div>
+        <div class="bg-amber-500 text-white flex-[24] flex flex-col justify-center px-6">
+          <div class="text-xs uppercase tracking-wider text-amber-100 font-semibold">VAL (OOS)</div>
+          <div class="font-bold text-lg">2025-08 ~ 2026-03</div>
+          <div class="text-xs text-amber-50 mt-1">8 個月 · early-stop & K sweep</div>
+        </div>
+        <div class="bg-rose-500 text-white flex-[13] flex flex-col justify-center px-6">
+          <div class="text-xs uppercase tracking-wider text-rose-100 font-semibold">UPLOAD</div>
+          <div class="font-bold text-lg">2026-01 ~ 04</div>
+          <div class="text-xs text-rose-50 mt-1">NCKU 平台 4 個月驗收</div>
+        </div>
+      </div>
+      <p class="text-sm text-gray-600 mt-4 leading-relaxed">
+        TRAIN 與 VAL 之間留 1 個月 gap（2025-07）避免 leakage；UPLOAD 期完全 OOS，
+        模型訓練時看不到任何 2025-08 之後的資料。
+      </p>
+    </div>
+
+    <div class="mb-6">
+      <h3 class="text-2xl font-bold text-white mb-3">每階段的目的與指標</h3>
+      <p class="text-emerald-50 text-base leading-relaxed max-w-3xl">
+        三階段不只是時間切割，三者的「角色」也完全不同：
+        訓練期確保模型有收斂，驗證期決定超參數，驗收期判定最終效果。
+        指標也分層使用，避免「為了通過某個指標而 overfit 到該指標」：
+      </p>
+    </div>
+    <div class="grid lg:grid-cols-3 gap-6">
+      <div class="bg-white text-gray-900 rounded-lg p-8">
+        <div class="h-12 w-12 rounded-full bg-blue-500 text-white flex items-center justify-center font-extrabold text-xl mb-4">1</div>
+        <h3 class="text-xl font-bold mb-3">Training（訓練期）</h3>
+        <p class="text-sm text-gray-600 leading-relaxed mb-3">
+          目的：讓 LGBM 真的學到東西、判斷是否收斂。
+        </p>
+        <p class="text-sm text-gray-600 leading-relaxed">
+          指標：LambdaRank loss、in-sample NDCG@5。
+          訓練時用 validation NDCG 做 early-stop（patience=50 棵樹），
+          loss 不再下降就停，避免 overfit。
+        </p>
+      </div>
+      <div class="bg-white text-gray-900 rounded-lg p-8">
+        <div class="h-12 w-12 rounded-full bg-amber-500 text-white flex items-center justify-center font-extrabold text-xl mb-4">2</div>
+        <h3 class="text-xl font-bold mb-3">Validation（驗證期）</h3>
+        <p class="text-sm text-gray-600 leading-relaxed mb-3">
+          目的：選超參數（K、學習率、num_leaves 等），但<span class="font-semibold">不能影響模型權重</span>。
+        </p>
+        <p class="text-sm text-gray-600 leading-relaxed">
+          指標：local rule_game backtest 的 total_return、Sharpe、max_dd、fill_rate。
+          K sweep 就是在此期完成、挑出 K=5。
+        </p>
+      </div>
+      <div class="bg-white text-gray-900 rounded-lg p-8">
+        <div class="h-12 w-12 rounded-full bg-rose-500 text-white flex items-center justify-center font-extrabold text-xl mb-4">3</div>
+        <h3 class="text-xl font-bold mb-3">Upload（最終驗收）</h3>
+        <p class="text-sm text-gray-600 leading-relaxed mb-3">
+          目的：把最終版策略丟到 NCKU 官方平台，看真實結算結果。
+        </p>
+        <p class="text-sm text-gray-600 leading-relaxed">
+          指標：平台給的 total_return、final_assets。
+          每月獨立上傳（避免複利 N 倍掩蓋真實 cycle 績效），
+          結果是不可逆的 ground truth。
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============== RESULTS / MONTHLY EQUITY CURVES ============== -->
+<section id="results" class="bg-white">
+  <div class="max-w-7xl mx-auto px-6 py-24">
+    <div class="text-xs font-semibold tracking-[0.2em] uppercase text-blue-500 mb-4">09 · Results</div>
+    <h2 class="text-4xl md:text-5xl font-extrabold mb-6 max-w-4xl">最終驗收：NCKU 官方回測結果。</h2>
+    <p class="text-gray-600 max-w-3xl mb-6 text-lg leading-relaxed">
+      下面是把最終版策略（K=5, daily rebalance, 初始資金 100M, ±1 tick margin）
+      上傳到 NCKU 平台跑 2026 Q1 + 4 月四個月、每月獨立上傳的真實結算結果。
+      每張卡片底部有 strategy_id，可以直接到 NCKU 排行榜對照。
+    </p>
+    <p class="text-gray-600 max-w-3xl mb-12 text-lg leading-relaxed">
+      之所以選擇「每月獨立上傳」而不是「跑完整 4 個月」，是因為這個策略複利能力極強：
+      連續跑 4 個月會把資產放大到不合理的數字（單月 +267% 平均，連跑 4 個月
+      會變成 100M × 3.67<sup>4</sup> ≈ 18 億，超過平台合理範圍且失去比較意義）。
+      分月驗收能更清楚看出「單月 cycle 績效」的穩定性。
+    </p>
+
+    <!-- Big number grid -->
+    <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+      <div class="bg-blue-500 text-white rounded-lg p-8">
+        <div class="text-xs uppercase tracking-wider text-blue-100 mb-3 font-semibold">2026-01</div>
+        <div class="text-5xl font-extrabold tabular-nums mb-2">+296%</div>
+        <div class="text-sm text-blue-50">最終資產 396.18M · 195 筆</div>
+        <div class="mt-4 pt-4 border-t border-white/20 text-xs text-blue-100 mono">strategy_id 269</div>
+      </div>
+      <div class="bg-emerald-500 text-white rounded-lg p-8">
+        <div class="text-xs uppercase tracking-wider text-emerald-100 mb-3 font-semibold">2026-02 (春節)</div>
+        <div class="text-5xl font-extrabold tabular-nums mb-2">+135%</div>
+        <div class="text-sm text-emerald-50">最終資產 234.65M · 105 筆</div>
+        <div class="mt-4 pt-4 border-t border-white/20 text-xs text-emerald-100 mono">strategy_id 268</div>
+      </div>
+      <div class="bg-amber-500 text-white rounded-lg p-8">
+        <div class="text-xs uppercase tracking-wider text-amber-100 mb-3 font-semibold">2026-03</div>
+        <div class="text-5xl font-extrabold tabular-nums mb-2">+333%</div>
+        <div class="text-sm text-amber-50">最終資產 433.42M · 205 筆</div>
+        <div class="mt-4 pt-4 border-t border-white/20 text-xs text-amber-100 mono">strategy_id 270</div>
+      </div>
+      <div class="bg-rose-500 text-white rounded-lg p-8">
+        <div class="text-xs uppercase tracking-wider text-rose-100 mb-3 font-semibold">2026-04</div>
+        <div class="text-5xl font-extrabold tabular-nums mb-2">+304%</div>
+        <div class="text-sm text-rose-50">最終資產 403.76M · 185 筆</div>
+        <div class="mt-4 pt-4 border-t border-white/20 text-xs text-rose-100 mono">strategy_id 271</div>
+      </div>
+    </div>
+
+    <!-- Equity curves chart -->
+    <div class="bg-gray-50 rounded-lg p-6 mb-10">
+      <h3 class="text-xl font-bold mb-2">每月實現損益曲線</h3>
+      <p class="text-sm text-gray-600 mb-4">
+        從 CSV 交易紀錄重建每日累積已實現 PnL（不含當月底未平倉部位 mark-to-market）。
+      </p>
+      <div id="equity-curves-chart" style="width:100%;height:500px;"></div>
+    </div>
+
+    <!-- Detailed table -->
+    <div class="border-2 border-gray-900 rounded-md overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-900 text-white uppercase tracking-wider text-xs">
+          <tr>
+            <th class="px-6 py-4 text-left font-semibold">月份</th>
+            <th class="px-6 py-4 text-right font-semibold">交易日</th>
+            <th class="px-6 py-4 text-right font-semibold">交易筆數</th>
+            <th class="px-6 py-4 text-right font-semibold">成功筆數</th>
+            <th class="px-6 py-4 text-right font-semibold">最終資產 (NCKU)</th>
+            <th class="px-6 py-4 text-right font-semibold">總報酬 (NCKU)</th>
+          </tr>
+        </thead>
+        <tbody class="mono divide-y-2 divide-gray-200">
+          <tr class="bg-white"><td class="px-6 py-4 font-bold">2026-01</td><td class="px-6 py-4 text-right">20</td><td class="px-6 py-4 text-right">195</td><td class="px-6 py-4 text-right text-emerald-600 font-bold">195</td><td class="px-6 py-4 text-right">396,180,421</td><td class="px-6 py-4 text-right text-blue-500 font-bold">+296.18%</td></tr>
+          <tr class="bg-gray-50"><td class="px-6 py-4 font-bold">2026-02</td><td class="px-6 py-4 text-right">19</td><td class="px-6 py-4 text-right">105</td><td class="px-6 py-4 text-right text-emerald-600 font-bold">105</td><td class="px-6 py-4 text-right">234,646,544</td><td class="px-6 py-4 text-right text-emerald-500 font-bold">+134.65%</td></tr>
+          <tr class="bg-white"><td class="px-6 py-4 font-bold">2026-03</td><td class="px-6 py-4 text-right">21</td><td class="px-6 py-4 text-right">205</td><td class="px-6 py-4 text-right text-emerald-600 font-bold">203</td><td class="px-6 py-4 text-right">433,417,098</td><td class="px-6 py-4 text-right text-amber-500 font-bold">+333.42%</td></tr>
+          <tr class="bg-gray-50"><td class="px-6 py-4 font-bold">2026-04</td><td class="px-6 py-4 text-right">21</td><td class="px-6 py-4 text-right">185</td><td class="px-6 py-4 text-right text-emerald-600 font-bold">183</td><td class="px-6 py-4 text-right">403,761,829</td><td class="px-6 py-4 text-right text-rose-500 font-bold">+303.76%</td></tr>
+          <tr class="bg-gray-900 text-white"><td class="px-6 py-4 font-bold">平均</td><td class="px-6 py-4 text-right">20.25</td><td class="px-6 py-4 text-right">172.5</td><td class="px-6 py-4 text-right">171.5</td><td class="px-6 py-4 text-right">367.0M</td><td class="px-6 py-4 text-right text-amber-300 font-bold text-base">+267%</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="mt-12 bg-gray-100 rounded-lg p-8 border-l-8 border-rose-500">
+      <h3 class="text-xl font-bold mb-4 flex items-center gap-3">
+        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        誠實揭露：上面是 perfect-fill 上限
+      </h3>
+      <ul class="space-y-2 text-gray-700 leading-relaxed text-sm">
+        <li>• NCKU rule_game 假設只要委託價落在 [L, H] 就 100% 成交，現實會有部分掛單沒撮成。</li>
+        <li>• 隔日全脫手 + 全進的 turnover 極高，實盤滑點與限價單未成交風險都是 perfect-fill 沒模擬的。</li>
+        <li>• 春節月（2026-02）只有 11 天有交易紀錄（春節前後休市），cycle 數較少 → 複利空間自然較小。</li>
+        <li>• 2026-03 / 04 各有 2 筆失敗，多半是漲停沒 fill 或 share 取整邊界 case。</li>
+        <li>• 上線預期報酬會比這些數字明顯下修，所以實盤 wrapper 加了 ±1 tick margin 換 fill rate。</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============== TICK RULES + EXECUTION ============== -->
+<section class="bg-gray-100">
+  <div class="max-w-7xl mx-auto px-6 py-24">
+    <div class="text-xs font-semibold tracking-[0.2em] uppercase text-blue-500 mb-4">10 · Execution Detail</div>
+    <h2 class="text-4xl md:text-5xl font-extrabold mb-6 max-w-4xl">下單細節：tick 規則與成本。</h2>
+    <p class="text-gray-700 max-w-3xl mb-12 text-lg leading-relaxed">
+      預測模型再準，實盤要賺錢還得真的「下得進去」+「成本算對」。
+      這節整理兩個容易被忽略卻會把績效啃光的細節：
+      <span class="font-semibold text-gray-900">TWSE 跳動單位 (tick) 規則</span>
+      （委託價要剛好落在合法 tick 上，不然會被自動調整）、
+      以及<span class="font-semibold text-gray-900">浮點誤差 (FP precision)</span>
+      （Python 內 16.90/0.05 不等於整數 338，會出 bug）。
+      最後也列出買賣雙邊的真實交易成本，回測時一定要扣。
+    </p>
+
+    <div class="grid lg:grid-cols-2 gap-10">
+      <div>
+        <h3 class="text-2xl font-bold mb-4">TWSE / NCKU 跳動單位（Tick）</h3>
+        <p class="text-gray-600 mb-6 leading-relaxed">
+          Tick size τ(p) 由價格區間決定（6 級分段函式）：
+        </p>
+        <div class="border-2 border-gray-900 rounded-md overflow-hidden bg-white">
+          <table class="w-full mono text-sm">
+            <thead class="bg-gray-900 text-white">
+              <tr>
+                <th class="px-4 py-3 text-left font-semibold">價格區間</th>
+                <th class="px-4 py-3 text-right font-semibold">Tick τ(p)</th>
+                <th class="px-4 py-3 text-left font-semibold">範例 L → L+1tk</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y-2 divide-gray-200">
+              <tr><td class="px-4 py-3">&lt; 10</td><td class="px-4 py-3 text-right text-blue-500 font-bold">0.01</td><td class="px-4 py-3 text-gray-700">8.95 → 8.96</td></tr>
+              <tr><td class="px-4 py-3">10 ~ 50</td><td class="px-4 py-3 text-right text-blue-500 font-bold">0.05</td><td class="px-4 py-3 text-gray-700">16.90 → 16.95</td></tr>
+              <tr><td class="px-4 py-3">50 ~ 100</td><td class="px-4 py-3 text-right text-blue-500 font-bold">0.10</td><td class="px-4 py-3 text-gray-700">89.50 → 89.60</td></tr>
+              <tr><td class="px-4 py-3">100 ~ 500</td><td class="px-4 py-3 text-right text-blue-500 font-bold">0.50</td><td class="px-4 py-3 text-gray-700">499.50 → 500.00</td></tr>
+              <tr><td class="px-4 py-3">500 ~ 1000</td><td class="px-4 py-3 text-right text-blue-500 font-bold">1.00</td><td class="px-4 py-3 text-gray-700">700.00 → 701.00</td></tr>
+              <tr><td class="px-4 py-3">≥ 1000</td><td class="px-4 py-3 text-right text-blue-500 font-bold">5.00</td><td class="px-4 py-3 text-gray-700">1950 → 1955</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div>
+        <h3 class="text-2xl font-bold mb-4">snap-to-tick：避免 FP 浮點誤差</h3>
+        <p class="text-gray-600 mb-6 leading-relaxed">
+          發現 16.90 / 0.05 在 IEEE 754 變成 337.999... 導致 floor 錯誤。
+          先 snap 到合法 tick 再加減才安全：
+        </p>
+        <div class="math-block mb-6">
+          tick_up(p, n) &nbsp;=&nbsp; round( round(p / τ) · τ, &nbsp;4 ) &nbsp;+&nbsp; n · τ
+        </div>
+        <div class="bg-gray-900 text-white rounded-lg p-6 mono text-sm overflow-x-auto leading-relaxed">
+<pre><span class="text-gray-500"># live_trade_lgbm.py / my_strategy_lgbm.py</span>
+<span class="text-rose-400">def</span> <span class="text-amber-300">_tick_size</span>(p):
+    <span class="text-rose-400">if</span> p &lt; 10:    <span class="text-rose-400">return</span> 0.01
+    <span class="text-rose-400">if</span> p &lt; 50:    <span class="text-rose-400">return</span> 0.05
+    <span class="text-rose-400">if</span> p &lt; 100:   <span class="text-rose-400">return</span> 0.10
+    <span class="text-rose-400">if</span> p &lt; 500:   <span class="text-rose-400">return</span> 0.50
+    <span class="text-rose-400">if</span> p &lt; 1000:  <span class="text-rose-400">return</span> 1.00
+    <span class="text-rose-400">return</span> 5.00
+
+<span class="text-rose-400">def</span> <span class="text-amber-300">tick_up</span>(p, n=1):
+    t = _tick_size(p)
+    snapped = round(round(p / t) * t, 4)
+    <span class="text-rose-400">return</span> round(snapped + n * t, 4)
+
+<span class="text-rose-400">def</span> <span class="text-amber-300">tick_down</span>(p, n=1):
+    t = _tick_size(p)
+    snapped = round(round(p / t) * t, 4)
+    <span class="text-rose-400">return</span> round(snapped - n * t, 4)
+</pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- Cost detail -->
+    <div class="mt-12 grid md:grid-cols-3 gap-6">
+      <div class="bg-blue-500 text-white rounded-lg p-8">
+        <div class="text-xs uppercase tracking-wider text-blue-100 mb-2 font-semibold">Buy Side</div>
+        <div class="text-2xl font-bold mb-2">手續費 c<sub>b</sub> = 0.1425%</div>
+        <div class="text-blue-50 text-sm leading-relaxed">最低 20 元；委託 = ceil_tick(L<sub>t</sub> + 1tk)</div>
+      </div>
+      <div class="bg-rose-500 text-white rounded-lg p-8">
+        <div class="text-xs uppercase tracking-wider text-rose-100 mb-2 font-semibold">Sell Side</div>
+        <div class="text-2xl font-bold mb-2">手續 + 證交稅 c<sub>s</sub> = 0.4425%</div>
+        <div class="text-rose-50 text-sm leading-relaxed">手續 0.1425% + 證交稅 0.3%；委託 = floor_tick(H<sub>t+1</sub> − 1tk)</div>
+      </div>
+      <div class="bg-emerald-500 text-white rounded-lg p-8">
+        <div class="text-xs uppercase tracking-wider text-emerald-100 mb-2 font-semibold">Round-Trip</div>
+        <div class="text-2xl font-bold mb-2">~ 0.585% / 次</div>
+        <div class="text-emerald-50 text-sm leading-relaxed">日內全進全出，每次來回成本須 &lt; 預期 spread 才賺</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============== LIVE TRADING ============== -->
+<section id="live" class="bg-gray-900 text-white relative overflow-hidden">
+  <div class="absolute -top-20 -left-20 w-96 h-96 shape-circle bg-emerald-500/15"></div>
+  <div class="absolute bottom-12 -right-24 w-72 h-72 shape-square bg-blue-500/15 rotate-12"></div>
+
+  <div class="relative max-w-7xl mx-auto px-6 py-24">
+    <div class="text-xs font-semibold tracking-[0.2em] uppercase text-amber-400 mb-4">11 · Live Trading</div>
+    <h2 class="text-4xl md:text-5xl font-extrabold mb-6 max-w-4xl">真的上線怎麼跑？每天 5 個步驟。</h2>
+    <p class="text-gray-300 max-w-3xl mb-12 text-lg leading-relaxed">
+      回測再漂亮，最後總要實際下單才有意義。
+      實盤的 daily routine 整合在一個 wrapper script <code class="mono bg-white/10 px-2 py-0.5 rounded text-amber-200">run_live_lgbm.sh</code>，
+      每天 NCKU 13:00 截單前手動執行一次。下面是 5 個步驟的拆解。
+      最右邊有實際的 bash 指令，預設是「印單但不送」，按 Y 確認後才會真的呼叫 API。
+    </p>
+
+    <div class="grid md:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div class="bg-blue-500 rounded-lg p-6">
+        <div class="text-5xl font-extrabold mb-3">01</div>
+        <div class="text-xs uppercase tracking-wider text-blue-100 mb-2 font-semibold">Cash Sync</div>
+        <div class="text-sm leading-relaxed">登入 NCKU 抄「可用餘額」<br/>寫入 state file</div>
+      </div>
+      <div class="bg-emerald-500 rounded-lg p-6">
+        <div class="text-5xl font-extrabold mb-3">02</div>
+        <div class="text-xs uppercase tracking-wider text-emerald-100 mb-2 font-semibold">Update Data</div>
+        <div class="text-sm leading-relaxed">yfinance 抓昨日 OHLCV<br/>更新 parquet (~2-3min)</div>
+      </div>
+      <div class="bg-amber-500 rounded-lg p-6">
+        <div class="text-5xl font-extrabold mb-3">03</div>
+        <div class="text-xs uppercase tracking-wider text-amber-100 mb-2 font-semibold">Live OHLC</div>
+        <div class="text-sm leading-relaxed">TWSE MIS API 抓<br/>當日 intraday L/H/C</div>
+      </div>
+      <div class="bg-rose-500 rounded-lg p-6">
+        <div class="text-5xl font-extrabold mb-3">04</div>
+        <div class="text-xs uppercase tracking-wider text-rose-100 mb-2 font-semibold">Score & Pick</div>
+        <div class="text-sm leading-relaxed">LGBM predict<br/>filter + Top-5</div>
+      </div>
+      <div class="bg-white text-gray-900 rounded-lg p-6">
+        <div class="text-5xl font-extrabold mb-3">05</div>
+        <div class="text-xs uppercase tracking-wider text-gray-500 mb-2 font-semibold">Submit</div>
+        <div class="text-sm leading-relaxed">SELL H−1tk 全部出<br/>BUY L+1tk × 1/5 each</div>
+      </div>
+    </div>
+
+    <div class="mt-12 bg-black rounded-lg p-6 mono text-sm overflow-x-auto">
+      <div class="text-xs uppercase tracking-wider text-gray-500 mb-3">Daily routine · NCKU 13:00 截單前</div>
+<pre class="text-emerald-400">$ <span class="text-white">bash run_live_lgbm.sh --preview-only</span>   <span class="text-gray-500"># 13:30 sneak peek</span>
+$ <span class="text-white">bash run_live_lgbm.sh --cash 6.47M</span>     <span class="text-gray-500"># 12:55 真正下單</span>
+</pre>
+    </div>
+
+    <div class="mt-12 grid md:grid-cols-3 gap-6">
+      <div class="bg-white/5 rounded-lg p-6 border-l-4 border-blue-500">
+        <div class="text-xs uppercase tracking-wider text-blue-400 mb-2 font-semibold">Sanity Guard</div>
+        <div class="font-bold text-lg mb-2">D4: min_spread</div>
+        <div class="text-sm text-gray-300 leading-relaxed">預測 spread &lt; 1% 直接 abort，避免低訊號日浪費手續費</div>
+      </div>
+      <div class="bg-white/5 rounded-lg p-6 border-l-4 border-emerald-500">
+        <div class="text-xs uppercase tracking-wider text-emerald-400 mb-2 font-semibold">Lock</div>
+        <div class="font-bold text-lg mb-2">PID lockfile</div>
+        <div class="text-sm text-gray-300 leading-relaxed">同一交易日只能跑一次（cron + 手動衝突保護）</div>
+      </div>
+      <div class="bg-white/5 rounded-lg p-6 border-l-4 border-amber-500">
+        <div class="text-xs uppercase tracking-wider text-amber-400 mb-2 font-semibold">Confirmation</div>
+        <div class="font-bold text-lg mb-2">Y/n 二次確認</div>
+        <div class="text-sm text-gray-300 leading-relaxed">下單前印 Top-5 + 委託價 + 預估投入金額，使用者確認後才送出</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============== FOOTER ============== -->
+<footer class="bg-white border-t-2 border-gray-900">
+  <div class="max-w-7xl mx-auto px-6 py-12">
+    <div class="grid md:grid-cols-3 gap-10">
+      <div>
+        <div class="flex items-center gap-3 mb-4">
+          <div class="h-9 w-9 bg-gray-900 text-white font-extrabold flex items-center justify-center rounded-md">L</div>
+          <div class="font-bold text-lg">LGBM LambdaRank</div>
+        </div>
+        <p class="text-sm text-gray-600 leading-relaxed">
+          NCKU 製造所 · 深度學習網路基礎：理論與產業實務 (P7-048) 期末專題。
+        </p>
+      </div>
+      <div>
+        <div class="text-xs font-semibold tracking-[0.2em] uppercase text-gray-500 mb-3">Author</div>
+        <div class="font-bold">張廷藝</div>
+        <div class="text-sm text-gray-600 mono mt-1">P76144621</div>
+        <div class="text-sm text-gray-600 mt-1">judy.333473@gmail.com</div>
+      </div>
+      <div>
+        <div class="text-xs font-semibold tracking-[0.2em] uppercase text-gray-500 mb-3">Artifacts</div>
+        <ul class="text-sm space-y-1 mono text-gray-700">
+          <li>data/x3_ultra/lgbm_lambdarank.txt</li>
+          <li>data/all_stocks.parquet</li>
+          <li>data/kmeans_clusters.npz</li>
+          <li>data/lgbm_backtest_K5_*.csv</li>
+        </ul>
+      </div>
+    </div>
+    <div class="mt-12 pt-8 border-t-2 border-gray-200 flex justify-between items-center">
+      <div class="text-xs text-gray-500 mono">Built 2026-05-08 · Tailwind + Outfit + Plotly · Flat Design</div>
+      <div class="text-xs text-gray-500">Educational use only · 無實際金錢價值</div>
+    </div>
+  </div>
+</footer>
+
+<!-- ============== PLOTLY DATA + SCRIPTS ============== -->
+<script>
+// ============= Feature importance data =============
+const FEATURE_IMPORTANCE = [
+  {name: 'dn_lag0',          gain_pct: 52.77, family: 'OHLC Lag'},
+  {name: 'ret_lag0',         gain_pct: 18.65, family: 'OHLC Lag'},
+  {name: 'rank_range_pct',   gain_pct: 14.01, family: 'Rank'},
+  {name: 'range_zscore_60',  gain_pct:  5.17, family: 'Range/Vol'},
+  {name: 'atr_classic_14',   gain_pct:  4.28, family: 'Range/Vol'},
+  {name: 'body_prop',        gain_pct:  2.03, family: 'Range/Vol'},
+  {name: 'rank_mom_5',       gain_pct:  0.88, family: 'Rank'},
+  {name: 'rank_atr',         gain_pct:  0.64, family: 'Rank'},
+  {name: 'log_adv',          gain_pct:  0.35, family: 'Liquidity'},
+  {name: 'amihud_illiq_20',  gain_pct:  0.25, family: 'Liquidity'},
+  {name: 'mom_5',            gain_pct:  0.22, family: 'Momentum'},
+  {name: 'up_lag0',          gain_pct:  0.16, family: 'OHLC Lag'},
+  {name: 'relative',         gain_pct:  0.11, family: 'Momentum'},
+  {name: 'mom_60',           gain_pct:  0.10, family: 'Momentum'},
+  {name: 'gk_20',            gain_pct:  0.08, family: 'Range/Vol'},
+  {name: 'mom_120',          gain_pct:  0.08, family: 'Momentum'},
+  {name: 'mom_20',           gain_pct:  0.07, family: 'Momentum'},
+  {name: 'ret_lag2',         gain_pct:  0.06, family: 'OHLC Lag'},
+  {name: 'mom_10',           gain_pct:  0.05, family: 'Momentum'},
+  {name: 'prox_52wh',        gain_pct:  0.04, family: 'Range/Vol'},
+];
+
+const FAMILY_COLOR = {
+  'OHLC Lag':  '#F59E0B',
+  'Rank':      '#111827',
+  'Range/Vol': '#10B981',
+  'Liquidity': '#F43F5E',
+  'Momentum':  '#3B82F6',
+};
+
+(function renderFeatureImportance() {
+  const sorted = [...FEATURE_IMPORTANCE].sort((a,b) => a.gain_pct - b.gain_pct);
+  const data = [{
+    type: 'bar',
+    orientation: 'h',
+    x: sorted.map(d => d.gain_pct),
+    y: sorted.map(d => d.name),
+    marker: {
+      color: sorted.map(d => FAMILY_COLOR[d.family]),
+    },
+    text: sorted.map(d => d.gain_pct.toFixed(2) + '%'),
+    textposition: 'outside',
+    textfont: { family: 'JetBrains Mono', size: 11, color: '#111827' },
+    hovertemplate: '<b>%{y}</b><br>gain = %{x:.2f}%<extra></extra>',
+  }];
+  const layout = {
+    margin: { l: 130, r: 80, t: 20, b: 40 },
+    xaxis: {
+      title: { text: 'Gain importance (% of total)', font: { family: 'Outfit', size: 13 } },
+      gridcolor: '#E5E7EB', zerolinecolor: '#111827', tickfont: { family: 'JetBrains Mono', size: 11 },
+    },
+    yaxis: {
+      tickfont: { family: 'JetBrains Mono', size: 12 },
+      automargin: true,
+    },
+    paper_bgcolor: 'white',
+    plot_bgcolor: 'white',
+    font: { family: 'Outfit' },
+    showlegend: false,
+    bargap: 0.25,
+  };
+  // Add legend manually as annotations
+  const families = Object.keys(FAMILY_COLOR);
+  layout.annotations = families.map((fam, i) => ({
+    x: 1.0, xref: 'paper',
+    y: 1.05 - i * 0.05, yref: 'paper',
+    xanchor: 'right',
+    text: `<span style="color:${FAMILY_COLOR[fam]};">■</span> ${fam}`,
+    showarrow: false,
+    font: { family: 'Outfit', size: 11, color: '#374151' },
+  }));
+  Plotly.newPlot('feature-importance-chart', data, layout, {responsive: true, displayModeBar: false});
+})();
+
+// ============= K Sweep data =============
+const K_SWEEP = [
+  {k:   1, cycle: 15.24, sharpe: 36.59},
+  {k:   2, cycle: 16.74, sharpe: 76.22},
+  {k:   3, cycle: 16.66, sharpe: 92.89},
+  {k:   5, cycle: 16.12, sharpe: 95.33},
+  {k:   7, cycle: 15.68, sharpe: 97.79},
+  {k:  10, cycle: 15.02, sharpe: 92.17},
+  {k:  15, cycle: 14.07, sharpe: 83.21},
+  {k:  20, cycle: 13.35, sharpe: 77.75},
+  {k:  30, cycle: 12.04, sharpe: 64.18},
+  {k:  50, cycle:  9.92, sharpe: 51.76},
+  {k: 100, cycle:  6.41, sharpe: 34.70},
+];
+
+(function renderKSweep() {
+  const ks = K_SWEEP.map(d => d.k);
+  const cycles = K_SWEEP.map(d => d.cycle);
+  const sharpes = K_SWEEP.map(d => d.sharpe);
+  const colors = ks.map(k => k === 5 ? '#3B82F6' : k === 2 ? '#F43F5E' : k === 7 ? '#F59E0B' : '#9CA3AF');
+
+  const traceCycle = {
+    type: 'bar',
+    x: ks.map(String),
+    y: cycles,
+    marker: { color: colors },
+    name: 'Cycle Return %',
+    text: cycles.map(v => '+' + v.toFixed(2) + '%'),
+    textposition: 'outside',
+    textfont: { family: 'JetBrains Mono', size: 11, color: '#111827' },
+    yaxis: 'y',
+    hovertemplate: 'K=%{x}<br>cycle = +%{y:.2f}%<extra></extra>',
+  };
+  const traceSharpe = {
+    type: 'scatter',
+    mode: 'lines+markers',
+    x: ks.map(String),
+    y: sharpes,
+    name: 'Sharpe',
+    line: { color: '#111827', width: 3 },
+    marker: { color: '#111827', size: 9, line: { color: 'white', width: 2 } },
+    yaxis: 'y2',
+    hovertemplate: 'K=%{x}<br>Sharpe = %{y:.2f}<extra></extra>',
+  };
+  const layout = {
+    margin: { l: 60, r: 60, t: 30, b: 60 },
+    xaxis: {
+      title: { text: 'K (number of stocks)', font: { family: 'Outfit', size: 13 } },
+      tickfont: { family: 'JetBrains Mono', size: 12 },
+      type: 'category',
+    },
+    yaxis: {
+      title: { text: 'Cycle return (%)', font: { family: 'Outfit', size: 13, color: '#3B82F6' } },
+      tickfont: { family: 'JetBrains Mono', size: 11, color: '#3B82F6' },
+      gridcolor: '#E5E7EB', zerolinecolor: '#111827',
+    },
+    yaxis2: {
+      title: { text: 'Sharpe', font: { family: 'Outfit', size: 13, color: '#111827' } },
+      tickfont: { family: 'JetBrains Mono', size: 11 },
+      overlaying: 'y', side: 'right', showgrid: false,
+    },
+    paper_bgcolor: '#F9FAFB',
+    plot_bgcolor: '#F9FAFB',
+    font: { family: 'Outfit' },
+    legend: { orientation: 'h', y: 1.12, x: 0.5, xanchor: 'center', font: { family: 'Outfit', size: 12 } },
+    bargap: 0.3,
+  };
+  Plotly.newPlot('k-sweep-chart', [traceCycle, traceSharpe], layout, {responsive: true, displayModeBar: false});
+})();
+
+// ============= Equity curves data =============
+const EQUITY = {
+  '2026-01': {dates: ['2026-01-05','2026-01-06','2026-01-07','2026-01-08','2026-01-09','2026-01-12','2026-01-13','2026-01-14','2026-01-15','2026-01-16','2026-01-19','2026-01-20','2026-01-21','2026-01-22','2026-01-23','2026-01-26','2026-01-27','2026-01-28','2026-01-29','2026-01-30'], pct: [0,6.42,12.74,19.40,26.16,42.42,55.89,60.58,79.83,96.57,113.39,129.58,144.14,172.87,188.65,203.51,230.20,257.89,267.60,285.71]},
+  '2026-02': {dates: ['2026-02-03','2026-02-04','2026-02-05','2026-02-06','2026-02-09','2026-02-10','2026-02-11','2026-02-23','2026-02-24','2026-02-25','2026-02-26'], pct: [0,5.63,14.06,15.01,28.44,40.63,51.09,65.38,85.21,105.93,128.85]},
+  '2026-03': {dates: ['2026-03-03','2026-03-04','2026-03-05','2026-03-06','2026-03-09','2026-03-10','2026-03-11','2026-03-12','2026-03-13','2026-03-16','2026-03-17','2026-03-18','2026-03-19','2026-03-20','2026-03-23','2026-03-24','2026-03-25','2026-03-26','2026-03-27','2026-03-30','2026-03-31'], pct: [0,-1.91,12.70,23.60,24.35,31.37,50.43,63.86,72.59,92.91,105.97,122.84,146.13,169.71,170.74,184.86,211.60,236.64,258.53,295.43,324.90]},
+  '2026-04': {dates: ['2026-04-02','2026-04-07','2026-04-08','2026-04-09','2026-04-10','2026-04-13','2026-04-14','2026-04-15','2026-04-16','2026-04-17','2026-04-20','2026-04-21','2026-04-22','2026-04-23','2026-04-24','2026-04-27','2026-04-28','2026-04-29','2026-04-30'], pct: [0,9.25,10.78,19.94,36.01,43.80,51.62,64.39,73.34,93.44,117.32,136.28,151.03,168.92,185.52,200.85,232.06,260.05,295.62]},
+};
+
+(function renderEquityCurves() {
+  const months = ['2026-01','2026-02','2026-03','2026-04'];
+  const colors = {'2026-01': '#3B82F6', '2026-02': '#10B981', '2026-03': '#F59E0B', '2026-04': '#F43F5E'};
+  const traces = months.map(m => ({
+    type: 'scatter',
+    mode: 'lines+markers',
+    x: EQUITY[m].dates.map((_, i) => i + 1),
+    y: EQUITY[m].pct,
+    name: m + ' (' + EQUITY[m].pct[EQUITY[m].pct.length-1].toFixed(1) + '%)',
+    line: { color: colors[m], width: 3 },
+    marker: { color: colors[m], size: 7, line: { color: 'white', width: 1.5 } },
+    hovertemplate: '<b>%{fullData.name}</b><br>Day %{x}<br>cum PnL = %{y:.2f}%<extra></extra>',
+  }));
+  const layout = {
+    margin: { l: 60, r: 30, t: 30, b: 60 },
+    xaxis: {
+      title: { text: 'Trading day index (within month)', font: { family: 'Outfit', size: 13 } },
+      tickfont: { family: 'JetBrains Mono', size: 11 },
+      gridcolor: '#E5E7EB', zerolinecolor: '#111827',
+      dtick: 1,
+    },
+    yaxis: {
+      title: { text: 'Cumulative realized PnL (%)', font: { family: 'Outfit', size: 13 } },
+      tickfont: { family: 'JetBrains Mono', size: 11 },
+      gridcolor: '#E5E7EB', zerolinecolor: '#111827',
+    },
+    paper_bgcolor: '#F9FAFB',
+    plot_bgcolor: '#F9FAFB',
+    font: { family: 'Outfit' },
+    legend: { orientation: 'h', y: -0.18, x: 0.5, xanchor: 'center', font: { family: 'Outfit', size: 12 } },
+    hovermode: 'closest',
+  };
+  Plotly.newPlot('equity-curves-chart', traces, layout, {responsive: true, displayModeBar: false});
+})();
+
+// ============= Baseline Random K=5 — 30 seeds × 4 months =============
+const BASELINE = {
+  '2026-01': {
+    returns: [125.21, 140.20, 120.31, 134.25, 112.15, 129.53, 138.96, 127.76, 146.10, 115.70,
+              108.74, 117.52, 148.83, 107.55, 112.53, 144.51, 132.74, 122.46, 152.12, 135.11,
+              105.29, 126.64, 125.60, 104.73, 125.80, 130.55, 125.19,  97.13, 111.20, 145.88],
+    mean: 125.68, std: 14.28, lgbm: 296.18, z: 11.94,
+  },
+  '2026-02': {
+    returns: [ 64.95,  58.58,  64.73,  67.51,  65.16,  47.31,  61.07,  55.99,  73.64,  55.30,
+               63.17,  64.98,  56.74,  53.30,  57.70,  56.96,  68.37,  54.10,  66.16,  59.02,
+               79.93,  62.17,  63.69,  58.53,  56.47,  50.28,  57.62,  52.81,  54.88,  72.72],
+    mean: 60.79, std: 7.11, lgbm: 134.65, z: 10.39,
+  },
+  '2026-03': {
+    returns: [105.66, 124.40, 148.95, 134.86, 137.65, 127.40, 129.81, 106.85, 126.14, 129.25,
+              163.18, 141.52, 120.05, 120.66, 128.83, 133.19, 115.39, 150.50, 132.24, 101.18,
+              116.20, 130.93, 122.91, 139.05, 128.02, 156.50, 109.33, 131.07, 143.85, 140.21],
+    mean: 129.86, std: 14.47, lgbm: 333.42, z: 14.07,
+  },
+  '2026-04': {
+    returns: [143.43, 153.24, 162.77, 165.32, 152.60, 176.21, 214.17, 175.74, 190.80, 145.96,
+              125.91, 159.74, 181.94, 157.13, 143.54, 176.88, 156.62, 143.77, 151.23, 123.39,
+              150.30, 174.84, 156.65, 141.01, 132.77, 141.81, 145.43, 154.41, 118.69, 158.24],
+    mean: 155.82, std: 20.07, lgbm: 303.76, z: 7.37,
+  },
+};
+
+(function renderBaselineBox() {
+  const months = ['2026-01', '2026-02', '2026-03', '2026-04'];
+  const monthColors = {'2026-01': '#3B82F6', '2026-02': '#10B981', '2026-03': '#F59E0B', '2026-04': '#F43F5E'};
+
+  // Box plot for random distribution (one box per month)
+  const boxTrace = {
+    type: 'box',
+    name: 'Random (30 seeds)',
+    x: [].concat(...months.map(m => BASELINE[m].returns.map(_ => m))),
+    y: [].concat(...months.map(m => BASELINE[m].returns)),
+    boxpoints: 'all',
+    jitter: 0.5,
+    pointpos: 0,
+    marker: {
+      color: '#9CA3AF',
+      size: 5,
+      opacity: 0.6,
+    },
+    line: { color: '#6B7280', width: 2 },
+    fillcolor: 'rgba(156, 163, 175, 0.2)',
+    boxmean: true,
+    hovertemplate: '<b>%{x}</b><br>seed return = %{y:.2f}%<extra></extra>',
+  };
+
+  // LGBM markers — one star per month
+  const lgbmTrace = {
+    type: 'scatter',
+    mode: 'markers+text',
+    name: 'LGBM (single run)',
+    x: months,
+    y: months.map(m => BASELINE[m].lgbm),
+    marker: {
+      symbol: 'star',
+      size: 24,
+      color: months.map(m => monthColors[m]),
+      line: { color: '#111827', width: 2 },
+    },
+    text: months.map(m => '+' + BASELINE[m].lgbm.toFixed(0) + '%'),
+    textposition: 'top center',
+    textfont: { family: 'JetBrains Mono', size: 12, color: '#111827', weight: 700 },
+    hovertemplate: '<b>LGBM %{x}</b><br>+%{y:.2f}%<extra></extra>',
+  };
+
+  const layout = {
+    margin: { l: 60, r: 30, t: 30, b: 80 },
+    xaxis: {
+      title: { text: 'Month', font: { family: 'Outfit', size: 13 } },
+      tickfont: { family: 'JetBrains Mono', size: 12 },
+    },
+    yaxis: {
+      title: { text: 'Total return (%)', font: { family: 'Outfit', size: 13 } },
+      tickfont: { family: 'JetBrains Mono', size: 11 },
+      gridcolor: '#E5E7EB', zerolinecolor: '#111827',
+    },
+    paper_bgcolor: 'white',
+    plot_bgcolor: 'white',
+    font: { family: 'Outfit' },
+    legend: { orientation: 'h', y: -0.18, x: 0.5, xanchor: 'center', font: { family: 'Outfit', size: 12 } },
+    showlegend: true,
+    hovermode: 'closest',
+  };
+
+  // Z-score annotations above each LGBM star
+  layout.annotations = months.map(m => ({
+    x: m, y: BASELINE[m].lgbm + 25,
+    text: `<b>${BASELINE[m].z.toFixed(2)}σ</b>`,
+    showarrow: false,
+    font: { family: 'Outfit', size: 11, color: '#10B981', weight: 700 },
+  }));
+
+  Plotly.newPlot('baseline-box-chart', [boxTrace, lgbmTrace], layout, {responsive: true, displayModeBar: false});
+})();
+</script>
+
+</body>
+</html>
