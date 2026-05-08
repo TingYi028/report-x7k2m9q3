@@ -951,8 +951,27 @@
       「跌深反彈」是這個策略的主要 alpha 來源。
     </p>
 
-    <!-- Plotly chart -->
-    <div class="bg-white text-gray-900 rounded-lg p-6">
+    <!-- Plotly chart with HTML legend chips above -->
+    <div class="bg-white text-gray-900 rounded-2xl p-6 md:p-8">
+      <!-- Legend chips (HTML, not Plotly) -->
+      <div class="flex flex-wrap gap-2 mb-5">
+        <div class="text-xs uppercase tracking-wider text-gray-500 font-bold pr-2 self-center">特徵族群：</div>
+        <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold" style="background: #FEF3C7; color: #B45309;">
+          <span class="w-3 h-3 rounded-sm" style="background: #F59E0B;"></span>OHLC Lag
+        </div>
+        <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold" style="background: #F3F4F6; color: #111827;">
+          <span class="w-3 h-3 rounded-sm" style="background: #111827;"></span>Rank
+        </div>
+        <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold" style="background: #D1FAE5; color: #047857;">
+          <span class="w-3 h-3 rounded-sm" style="background: #10B981;"></span>Range/Vol
+        </div>
+        <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold" style="background: #FCE7E7; color: #9F1239;">
+          <span class="w-3 h-3 rounded-sm" style="background: #F43F5E;"></span>Liquidity
+        </div>
+        <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold" style="background: #DBEAFE; color: #1D4ED8;">
+          <span class="w-3 h-3 rounded-sm" style="background: #3B82F6;"></span>Momentum
+        </div>
+      </div>
       <div id="feature-importance-chart" style="width:100%;height:600px;"></div>
     </div>
 
@@ -1051,7 +1070,7 @@
     </div>
 
     <!-- Plotly K sweep chart -->
-    <div class="bg-gray-50 rounded-lg p-6">
+    <div class="bg-white border-2 border-gray-100 rounded-2xl p-6 md:p-8">
       <div id="k-sweep-chart" style="width:100%;height:500px;"></div>
     </div>
 
@@ -1134,14 +1153,15 @@
       </div>
     </div>
 
-    <!-- Plotly: Box plot -->
-    <div class="bg-white rounded-lg p-6 mb-10">
-      <div class="text-xs uppercase tracking-wider text-gray-500 font-bold mb-2">RANDOM SEED DISTRIBUTION</div>
-      <h3 class="text-xl font-bold text-gray-900 mb-4">30 個 seed 的報酬分佈 vs LGBM 單次結果</h3>
-      <div id="baseline-box-chart" style="width:100%;height:500px;"></div>
-      <p class="text-xs text-gray-500 mt-3">
-        ★ = LGBM 結果（單次決定性）。盒鬚範圍為 random 的 25-75 百分位 + 全距 (min~max)。
+    <!-- Plotly: Random vs LGBM comparison -->
+    <div class="bg-white rounded-2xl p-6 md:p-8 mb-10">
+      <div class="text-xs uppercase tracking-wider text-gray-500 font-bold mb-2">Random vs LGBM</div>
+      <h3 class="text-xl md:text-2xl font-extrabold text-gray-900 mb-2">30 個 random seed vs LGBM 單次結果</h3>
+      <p class="text-sm text-gray-600 mb-6 leading-relaxed">
+        左邊灰點 = 30 個 random seed 的個別報酬，灰色橫線 = random mean；
+        右邊星星 = LGBM 單次結果。中間虛線 + 標籤顯示 lift（pp）跟 z-score。
       </p>
+      <div id="baseline-box-chart" style="width:100%;height:560px;"></div>
     </div>
 
     <!-- Comparison table -->
@@ -1412,10 +1432,11 @@
     </div>
 
     <!-- Equity curves chart -->
-    <div class="bg-gray-50 rounded-lg p-6 mb-10">
-      <h3 class="text-xl font-bold mb-2">每月實現損益曲線</h3>
-      <p class="text-sm text-gray-600 mb-4">
+    <div class="bg-white border-2 border-gray-100 rounded-2xl p-6 md:p-8 mb-10">
+      <h3 class="text-xl md:text-2xl font-extrabold mb-2">每月實現損益曲線</h3>
+      <p class="text-sm text-gray-600 mb-6 leading-relaxed">
         從 CSV 交易紀錄重建每日累積已實現 PnL（不含當月底未平倉部位 mark-to-market）。
+        4 條曲線形狀近乎一致 ── 顯示策略的 cycle 級複利效應在每個月都很穩定。
       </p>
       <div id="equity-curves-chart" style="width:100%;height:500px;"></div>
     </div>
@@ -1695,6 +1716,18 @@ const FAMILY_COLOR = {
   'Momentum':  '#3B82F6',
 };
 
+// ─── Canva theme base (shared by all charts) ───
+const CANVA_THEME = {
+  font: { family: 'Outfit, sans-serif', color: '#111827', size: 13 },
+  paper_bgcolor: 'rgba(0,0,0,0)',
+  plot_bgcolor: 'rgba(0,0,0,0)',
+  hoverlabel: {
+    bgcolor: '#111827', bordercolor: '#111827',
+    font: { family: 'Outfit', size: 13, color: 'white' },
+  },
+  colorway: ['#3B82F6','#10B981','#F59E0B','#F43F5E','#8B5CF6'],
+};
+
 (function renderFeatureImportance() {
   const sorted = [...FEATURE_IMPORTANCE].sort((a,b) => a.gain_pct - b.gain_pct);
   const data = [{
@@ -1704,38 +1737,33 @@ const FAMILY_COLOR = {
     y: sorted.map(d => d.name),
     marker: {
       color: sorted.map(d => FAMILY_COLOR[d.family]),
+      line: { color: 'white', width: 1 },
     },
     text: sorted.map(d => d.gain_pct.toFixed(2) + '%'),
     textposition: 'outside',
-    textfont: { family: 'JetBrains Mono', size: 11, color: '#111827' },
-    hovertemplate: '<b>%{y}</b><br>gain = %{x:.2f}%<extra></extra>',
+    textfont: { family: 'Outfit', size: 12, color: '#111827' },
+    cliponaxis: false,
+    hovertemplate: '<b>%{y}</b><br>%{customdata}<br>gain = <b>%{x:.2f}%</b><extra></extra>',
+    customdata: sorted.map(d => d.family),
   }];
   const layout = {
-    margin: { l: 130, r: 80, t: 20, b: 40 },
+    ...CANVA_THEME,
+    margin: { l: 140, r: 80, t: 30, b: 50 },
     xaxis: {
-      title: { text: 'Gain importance (% of total)', font: { family: 'Outfit', size: 13 } },
-      gridcolor: '#E5E7EB', zerolinecolor: '#111827', tickfont: { family: 'JetBrains Mono', size: 11 },
+      title: { text: 'Gain importance (% of total)', font: { family: 'Outfit', size: 13, color: '#6B7280' }, standoff: 10 },
+      gridcolor: '#F3F4F6', zerolinecolor: '#111827', zerolinewidth: 2,
+      tickfont: { family: 'Outfit', size: 12, color: '#6B7280' },
+      tickformat: '.0f', ticksuffix: '%',
+      showline: false, ticks: '',
     },
     yaxis: {
-      tickfont: { family: 'JetBrains Mono', size: 12 },
-      automargin: true,
+      tickfont: { family: 'JetBrains Mono', size: 12, color: '#111827' },
+      automargin: true, showgrid: false,
+      showline: false, ticks: '',
     },
-    paper_bgcolor: 'white',
-    plot_bgcolor: 'white',
-    font: { family: 'Outfit' },
     showlegend: false,
-    bargap: 0.25,
+    bargap: 0.35,
   };
-  // Add legend manually as annotations
-  const families = Object.keys(FAMILY_COLOR);
-  layout.annotations = families.map((fam, i) => ({
-    x: 1.0, xref: 'paper',
-    y: 1.05 - i * 0.05, yref: 'paper',
-    xanchor: 'right',
-    text: `<span style="color:${FAMILY_COLOR[fam]};">■</span> ${fam}`,
-    showarrow: false,
-    font: { family: 'Outfit', size: 11, color: '#374151' },
-  }));
   Plotly.newPlot('feature-importance-chart', data, layout, {responsive: true, displayModeBar: false});
 })();
 
@@ -1758,19 +1786,26 @@ const K_SWEEP = [
   const ks = K_SWEEP.map(d => d.k);
   const cycles = K_SWEEP.map(d => d.cycle);
   const sharpes = K_SWEEP.map(d => d.sharpe);
-  const colors = ks.map(k => k === 5 ? '#3B82F6' : k === 2 ? '#F43F5E' : k === 7 ? '#F59E0B' : '#9CA3AF');
+  // 顏色：K=2 (best return) rose · K=5 (chosen) blue · K=7 (best Sharpe) amber · others light gray
+  const colors = ks.map(k => k === 5 ? '#3B82F6' : k === 2 ? '#F43F5E' : k === 7 ? '#F59E0B' : '#D1D5DB');
+  const opacities = ks.map(k => [2,5,7].includes(k) ? 1.0 : 0.6);
 
   const traceCycle = {
     type: 'bar',
     x: ks.map(String),
     y: cycles,
-    marker: { color: colors },
-    name: 'Cycle Return %',
-    text: cycles.map(v => '+' + v.toFixed(2) + '%'),
+    marker: {
+      color: colors,
+      opacity: opacities,
+      line: { color: 'white', width: 2 },
+    },
+    name: 'Cycle Return',
+    text: cycles.map((v, i) => [2,5,7].includes(ks[i]) ? '<b>+' + v.toFixed(2) + '%</b>' : '+' + v.toFixed(1) + '%'),
     textposition: 'outside',
-    textfont: { family: 'JetBrains Mono', size: 11, color: '#111827' },
+    textfont: { family: 'Outfit', size: 11, color: '#111827' },
+    cliponaxis: false,
     yaxis: 'y',
-    hovertemplate: 'K=%{x}<br>cycle = +%{y:.2f}%<extra></extra>',
+    hovertemplate: '<b>K = %{x}</b><br>cycle return = +%{y:.2f}%<extra></extra>',
   };
   const traceSharpe = {
     type: 'scatter',
@@ -1778,33 +1813,50 @@ const K_SWEEP = [
     x: ks.map(String),
     y: sharpes,
     name: 'Sharpe',
-    line: { color: '#111827', width: 3 },
-    marker: { color: '#111827', size: 9, line: { color: 'white', width: 2 } },
+    line: { color: '#111827', width: 2.5, shape: 'spline', smoothing: 0.6 },
+    marker: { color: '#111827', size: 8, line: { color: 'white', width: 2 } },
     yaxis: 'y2',
-    hovertemplate: 'K=%{x}<br>Sharpe = %{y:.2f}<extra></extra>',
+    hovertemplate: '<b>K = %{x}</b><br>Sharpe = %{y:.2f}<extra></extra>',
   };
   const layout = {
-    margin: { l: 60, r: 60, t: 30, b: 60 },
+    ...CANVA_THEME,
+    margin: { l: 65, r: 65, t: 70, b: 60 },
     xaxis: {
-      title: { text: 'K (number of stocks)', font: { family: 'Outfit', size: 13 } },
-      tickfont: { family: 'JetBrains Mono', size: 12 },
+      title: { text: 'K (每日選幾檔股票)', font: { family: 'Outfit', size: 13, color: '#6B7280' }, standoff: 10 },
+      tickfont: { family: 'Outfit', size: 13, color: '#111827' },
       type: 'category',
+      showgrid: false, showline: false, ticks: '',
     },
     yaxis: {
-      title: { text: 'Cycle return (%)', font: { family: 'Outfit', size: 13, color: '#3B82F6' } },
-      tickfont: { family: 'JetBrains Mono', size: 11, color: '#3B82F6' },
-      gridcolor: '#E5E7EB', zerolinecolor: '#111827',
+      title: { text: 'Cycle Return (%)', font: { family: 'Outfit', size: 13, color: '#3B82F6' }, standoff: 10 },
+      tickfont: { family: 'Outfit', size: 11, color: '#3B82F6' },
+      tickformat: '.0f', ticksuffix: '%',
+      gridcolor: '#F3F4F6', zerolinecolor: '#111827', zerolinewidth: 2,
+      showline: false, ticks: '',
+      range: [0, 19],
     },
     yaxis2: {
-      title: { text: 'Sharpe', font: { family: 'Outfit', size: 13, color: '#111827' } },
-      tickfont: { family: 'JetBrains Mono', size: 11 },
+      title: { text: 'Sharpe', font: { family: 'Outfit', size: 13, color: '#111827' }, standoff: 10 },
+      tickfont: { family: 'Outfit', size: 11, color: '#111827' },
       overlaying: 'y', side: 'right', showgrid: false,
+      showline: false, ticks: '',
+      range: [25, 110],
     },
-    paper_bgcolor: '#F9FAFB',
-    plot_bgcolor: '#F9FAFB',
-    font: { family: 'Outfit' },
-    legend: { orientation: 'h', y: 1.12, x: 0.5, xanchor: 'center', font: { family: 'Outfit', size: 12 } },
+    legend: {
+      orientation: 'h', y: 1.12, x: 0.5, xanchor: 'center',
+      font: { family: 'Outfit', size: 12, color: '#374151' },
+      bgcolor: 'rgba(255,255,255,0.8)',
+    },
     bargap: 0.3,
+    annotations: [
+      // Highlight badges below each special K
+      {x: '2', y: -0.10, xref: 'x', yref: 'paper', text: '<b>BEST RETURN</b>', showarrow: false,
+       font: {family: 'Outfit', size: 9, color: '#F43F5E'}, bgcolor: '#FCE7E7', borderpad: 4},
+      {x: '5', y: -0.10, xref: 'x', yref: 'paper', text: '<b>CHOSEN</b>', showarrow: false,
+       font: {family: 'Outfit', size: 9, color: '#1D4ED8'}, bgcolor: '#DBEAFE', borderpad: 4},
+      {x: '7', y: -0.10, xref: 'x', yref: 'paper', text: '<b>BEST SHARPE</b>', showarrow: false,
+       font: {family: 'Outfit', size: 9, color: '#B45309'}, bgcolor: '#FEF3C7', borderpad: 4},
+    ],
   };
   Plotly.newPlot('k-sweep-chart', [traceCycle, traceSharpe], layout, {responsive: true, displayModeBar: false});
 })();
@@ -1820,33 +1872,45 @@ const EQUITY = {
 (function renderEquityCurves() {
   const months = ['2026-01','2026-02','2026-03','2026-04'];
   const colors = {'2026-01': '#3B82F6', '2026-02': '#10B981', '2026-03': '#F59E0B', '2026-04': '#F43F5E'};
-  const traces = months.map(m => ({
+  const fillRGBA = {'2026-01': 'rgba(59,130,246,0.08)', '2026-02': 'rgba(16,185,129,0.08)', '2026-03': 'rgba(245,158,11,0.08)', '2026-04': 'rgba(244,63,94,0.08)'};
+  const traces = months.map((m, i) => ({
     type: 'scatter',
     mode: 'lines+markers',
-    x: EQUITY[m].dates.map((_, i) => i + 1),
+    x: EQUITY[m].dates.map((_, idx) => idx + 1),
     y: EQUITY[m].pct,
-    name: m + ' (' + EQUITY[m].pct[EQUITY[m].pct.length-1].toFixed(1) + '%)',
-    line: { color: colors[m], width: 3 },
-    marker: { color: colors[m], size: 7, line: { color: 'white', width: 1.5 } },
-    hovertemplate: '<b>%{fullData.name}</b><br>Day %{x}<br>cum PnL = %{y:.2f}%<extra></extra>',
+    name: '<b>' + m + '</b>  ' + EQUITY[m].pct[EQUITY[m].pct.length-1].toFixed(1) + '%',
+    line: { color: colors[m], width: 3.5, shape: 'spline', smoothing: 0.6 },
+    marker: {
+      color: colors[m],
+      size: 7,
+      line: { color: 'white', width: 2 },
+    },
+    fill: 'tozeroy',
+    fillcolor: fillRGBA[m],
+    hovertemplate: '<b>%{fullData.name}</b><br>Day %{x}<br>cum PnL = <b>%{y:.2f}%</b><extra></extra>',
   }));
   const layout = {
-    margin: { l: 60, r: 30, t: 30, b: 60 },
+    ...CANVA_THEME,
+    margin: { l: 70, r: 30, t: 30, b: 80 },
     xaxis: {
-      title: { text: 'Trading day index (within month)', font: { family: 'Outfit', size: 13 } },
-      tickfont: { family: 'JetBrains Mono', size: 11 },
-      gridcolor: '#E5E7EB', zerolinecolor: '#111827',
-      dtick: 1,
+      title: { text: '月內交易日序', font: { family: 'Outfit', size: 13, color: '#6B7280' }, standoff: 10 },
+      tickfont: { family: 'Outfit', size: 11, color: '#6B7280' },
+      gridcolor: '#F3F4F6', zerolinecolor: '#111827', zerolinewidth: 2,
+      dtick: 2, showline: false, ticks: '',
     },
     yaxis: {
-      title: { text: 'Cumulative realized PnL (%)', font: { family: 'Outfit', size: 13 } },
-      tickfont: { family: 'JetBrains Mono', size: 11 },
-      gridcolor: '#E5E7EB', zerolinecolor: '#111827',
+      title: { text: '累積已實現 PnL (%)', font: { family: 'Outfit', size: 13, color: '#6B7280' }, standoff: 10 },
+      tickfont: { family: 'Outfit', size: 11, color: '#6B7280' },
+      tickformat: '.0f', ticksuffix: '%',
+      gridcolor: '#F3F4F6', zerolinecolor: '#111827', zerolinewidth: 2,
+      showline: false, ticks: '',
     },
-    paper_bgcolor: '#F9FAFB',
-    plot_bgcolor: '#F9FAFB',
-    font: { family: 'Outfit' },
-    legend: { orientation: 'h', y: -0.18, x: 0.5, xanchor: 'center', font: { family: 'Outfit', size: 12 } },
+    legend: {
+      orientation: 'h', y: -0.22, x: 0.5, xanchor: 'center',
+      font: { family: 'Outfit', size: 13, color: '#374151' },
+      bgcolor: 'rgba(255,255,255,0.8)',
+      itemwidth: 100,
+    },
     hovermode: 'closest',
   };
   Plotly.newPlot('equity-curves-chart', traces, layout, {responsive: true, displayModeBar: false});
@@ -1884,73 +1948,130 @@ const BASELINE = {
   const months = ['2026-01', '2026-02', '2026-03', '2026-04'];
   const monthColors = {'2026-01': '#3B82F6', '2026-02': '#10B981', '2026-03': '#F59E0B', '2026-04': '#F43F5E'};
 
-  // Box plot for random distribution (one box per month)
-  const boxTrace = {
-    type: 'box',
+  // Random scatter points (jittered horizontally) — Canva 風的個別點散佈
+  const allX = [];
+  const allY = [];
+  months.forEach((m, mIdx) => {
+    BASELINE[m].returns.forEach(v => {
+      // Position random points slightly left of month
+      allX.push(mIdx - 0.18 + (Math.random() - 0.5) * 0.18);
+      allY.push(v);
+    });
+  });
+  const randomScatter = {
+    type: 'scatter',
+    mode: 'markers',
     name: 'Random (30 seeds)',
-    x: [].concat(...months.map(m => BASELINE[m].returns.map(_ => m))),
-    y: [].concat(...months.map(m => BASELINE[m].returns)),
-    boxpoints: 'all',
-    jitter: 0.5,
-    pointpos: 0,
+    x: allX, y: allY,
     marker: {
-      color: '#9CA3AF',
-      size: 5,
-      opacity: 0.6,
+      color: '#D1D5DB', size: 7, opacity: 0.7,
+      line: { color: 'white', width: 1 },
     },
-    line: { color: '#6B7280', width: 2 },
-    fillcolor: 'rgba(156, 163, 175, 0.2)',
-    boxmean: true,
-    hovertemplate: '<b>%{x}</b><br>seed return = %{y:.2f}%<extra></extra>',
+    hovertemplate: '<b>random seed</b><br>return = %{y:.2f}%<extra></extra>',
+    showlegend: true,
   };
 
-  // LGBM markers — one star per month
+  // Random mean as a horizontal bar (median line for each month)
+  const randomMean = {
+    type: 'scatter',
+    mode: 'markers',
+    name: 'Random mean',
+    x: months.map((_, i) => i - 0.18),
+    y: months.map(m => BASELINE[m].mean),
+    marker: {
+      symbol: 'line-ew', size: 30,
+      line: { color: '#374151', width: 4 },
+    },
+    hovertemplate: '<b>%{customdata} · Random mean</b><br>+%{y:.2f}%<extra></extra>',
+    customdata: months,
+    showlegend: true,
+  };
+
+  // LGBM stars — bigger and clearer
   const lgbmTrace = {
     type: 'scatter',
-    mode: 'markers+text',
+    mode: 'markers',
     name: 'LGBM (single run)',
-    x: months,
+    x: months.map((_, i) => i + 0.18),
     y: months.map(m => BASELINE[m].lgbm),
     marker: {
-      symbol: 'star',
-      size: 24,
+      symbol: 'star', size: 32,
       color: months.map(m => monthColors[m]),
-      line: { color: '#111827', width: 2 },
+      line: { color: '#111827', width: 3 },
     },
-    text: months.map(m => '+' + BASELINE[m].lgbm.toFixed(0) + '%'),
-    textposition: 'top center',
-    textfont: { family: 'JetBrains Mono', size: 12, color: '#111827', weight: 700 },
-    hovertemplate: '<b>LGBM %{x}</b><br>+%{y:.2f}%<extra></extra>',
-  };
-
-  const layout = {
-    margin: { l: 60, r: 30, t: 30, b: 80 },
-    xaxis: {
-      title: { text: 'Month', font: { family: 'Outfit', size: 13 } },
-      tickfont: { family: 'JetBrains Mono', size: 12 },
-    },
-    yaxis: {
-      title: { text: 'Total return (%)', font: { family: 'Outfit', size: 13 } },
-      tickfont: { family: 'JetBrains Mono', size: 11 },
-      gridcolor: '#E5E7EB', zerolinecolor: '#111827',
-    },
-    paper_bgcolor: 'white',
-    plot_bgcolor: 'white',
-    font: { family: 'Outfit' },
-    legend: { orientation: 'h', y: -0.18, x: 0.5, xanchor: 'center', font: { family: 'Outfit', size: 12 } },
+    hovertemplate: '<b>%{customdata} · LGBM</b><br>+%{y:.2f}%<extra></extra>',
+    customdata: months,
     showlegend: true,
-    hovermode: 'closest',
   };
 
-  // Z-score annotations above each LGBM star
-  layout.annotations = months.map(m => ({
-    x: m, y: BASELINE[m].lgbm + 25,
-    text: `<b>${BASELINE[m].z.toFixed(2)}σ</b>`,
-    showarrow: false,
-    font: { family: 'Outfit', size: 11, color: '#10B981', weight: 700 },
+  // Lift arrows — visual连接 random mean → LGBM star (showing the lift)
+  const liftShapes = months.map((m, i) => ({
+    type: 'line',
+    x0: i - 0.18, x1: i + 0.18,
+    y0: BASELINE[m].mean, y1: BASELINE[m].lgbm,
+    line: { color: monthColors[m], width: 2, dash: 'dot' },
+    layer: 'below',
   }));
 
-  Plotly.newPlot('baseline-box-chart', [boxTrace, lgbmTrace], layout, {responsive: true, displayModeBar: false});
+  // 文字註解：z-score 跟 +XXX% 分別放在 random mean 跟 LGBM 旁
+  const annotations = [];
+  months.forEach((m, i) => {
+    // Random mean label (左下)
+    annotations.push({
+      x: i - 0.18, y: BASELINE[m].mean,
+      xshift: -10, yshift: 0, xanchor: 'right', yanchor: 'middle',
+      text: `+${BASELINE[m].mean.toFixed(0)}%`,
+      showarrow: false,
+      font: { family: 'Outfit', size: 11, color: '#6B7280' },
+    });
+    // LGBM label (右上)
+    annotations.push({
+      x: i + 0.18, y: BASELINE[m].lgbm,
+      xshift: 12, yshift: 0, xanchor: 'left', yanchor: 'middle',
+      text: `<b style="color:${monthColors[m]};">+${BASELINE[m].lgbm.toFixed(0)}%</b>`,
+      showarrow: false,
+      font: { family: 'Outfit', size: 13, color: monthColors[m] },
+    });
+    // Lift label between them
+    const midY = (BASELINE[m].mean + BASELINE[m].lgbm) / 2;
+    annotations.push({
+      x: i, y: midY,
+      text: `<b>+${(BASELINE[m].lgbm - BASELINE[m].mean).toFixed(0)} pp</b><br><span style="font-size:10px;">${BASELINE[m].z.toFixed(1)}σ</span>`,
+      showarrow: false,
+      font: { family: 'Outfit', size: 11, color: '#10B981' },
+      bgcolor: 'rgba(255,255,255,0.95)',
+      bordercolor: '#10B981', borderwidth: 1.5, borderpad: 4,
+    });
+  });
+
+  const layout = {
+    ...CANVA_THEME,
+    margin: { l: 70, r: 60, t: 30, b: 80 },
+    xaxis: {
+      tickmode: 'array', tickvals: months.map((_, i) => i), ticktext: months,
+      tickfont: { family: 'Outfit', size: 13, color: '#111827' },
+      title: { text: '月份', font: { family: 'Outfit', size: 13, color: '#6B7280' }, standoff: 10 },
+      range: [-0.55, 3.55],
+      showgrid: false, showline: false, ticks: '',
+    },
+    yaxis: {
+      title: { text: '單月總報酬 (%)', font: { family: 'Outfit', size: 13, color: '#6B7280' }, standoff: 10 },
+      tickfont: { family: 'Outfit', size: 11, color: '#6B7280' },
+      tickformat: '.0f', ticksuffix: '%',
+      gridcolor: '#F3F4F6', zerolinecolor: '#111827', zerolinewidth: 2,
+      showline: false, ticks: '',
+      range: [30, 380],
+    },
+    legend: {
+      orientation: 'h', y: -0.22, x: 0.5, xanchor: 'center',
+      font: { family: 'Outfit', size: 12, color: '#374151' },
+    },
+    hovermode: 'closest',
+    shapes: liftShapes,
+    annotations,
+  };
+
+  Plotly.newPlot('baseline-box-chart', [randomScatter, randomMean, lgbmTrace], layout, {responsive: true, displayModeBar: false});
 })();
 </script>
 
