@@ -1315,6 +1315,50 @@
       Cycle return = (1 + total_return)<sup>1/N<sub>cycles</sub></sup> − 1，N<sub>cycles</sub> ≈ 84 個交易日。
       K 越小報酬越高但變異也大；K=2 雖最高但只有 2 檔分散，單檔下單失敗會大幅影響。K=5 取折衷。
     </p>
+
+    <!-- ─── Sharpe 解釋 callout ─── -->
+    <div class="mt-10 bg-gray-900 text-white rounded-2xl p-7 md:p-9 border-l-8 border-amber-500">
+      <div class="flex items-baseline gap-3 mb-4">
+        <div class="text-amber-400 text-xs font-extrabold uppercase tracking-[0.2em]">📐 Sidebar</div>
+        <h3 class="text-xl md:text-2xl font-extrabold">Sharpe = 97.79 是什麼意思？</h3>
+      </div>
+      <p class="text-gray-300 leading-relaxed mb-4">
+        Sharpe Ratio（夏普比率）是金融界衡量「<span class="font-semibold text-white">承擔每單位風險，能拿到多少超額報酬</span>」
+        的標準指標。直觀講就是：「<span class="font-semibold text-white">賺得多 + 賺得穩</span>」這兩件事的綜合分數。
+      </p>
+      <div class="bg-black/40 rounded-lg p-4 mb-5 mono text-center text-amber-200 text-sm md:text-base">
+        Sharpe = (策略報酬 − 無風險利率) / 報酬的標準差 &nbsp;×&nbsp; √252
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-5 mb-5">
+        <div class="bg-white/5 rounded-lg p-5">
+          <div class="text-xs uppercase tracking-wider text-emerald-400 font-bold mb-3">真實世界級距</div>
+          <ul class="text-sm text-gray-300 space-y-1.5">
+            <li>• <span class="mono">&lt; 0.5</span> &nbsp;→&nbsp; 一般大盤被動投資</li>
+            <li>• <span class="mono">0.5 ~ 1.0</span> &nbsp;→&nbsp; 普通主動基金</li>
+            <li>• <span class="mono">1.0 ~ 2.0</span> &nbsp;→&nbsp; 不錯的 hedge fund</li>
+            <li>• <span class="mono">2.0 ~ 3.0</span> &nbsp;→&nbsp; 業界頂級（Medallion Fund）</li>
+            <li>• <span class="mono">&gt; 3.0</span> &nbsp;→&nbsp; 通常代表 overfit 或計算錯誤</li>
+          </ul>
+        </div>
+        <div class="bg-rose-500/15 rounded-lg p-5 border border-rose-500/40">
+          <div class="text-xs uppercase tracking-wider text-rose-300 font-bold mb-3">為什麼我們的 ≥ 90？</div>
+          <p class="text-sm text-gray-300 leading-relaxed">
+            因為 NCKU rule_game 假設只要委託價落在 [L, H] 就 <span class="font-bold text-white">100% 成交</span>（perfect-fill）──
+            策略每天「買 L、賣 H」幾乎不會失敗，
+            <span class="font-bold text-white">日報酬極度穩定</span>（std 很小）→ 分母小 → Sharpe 飆到天上。
+          </p>
+        </div>
+      </div>
+
+      <p class="text-sm text-gray-400 leading-relaxed">
+        <span class="font-semibold text-white">所以這個 97.79 是上限</span>，實盤會被滑點 / 未成交 / 大盤跳空等因素拉低，
+        實際 Sharpe 預期會落在 <span class="mono text-amber-300">1 ~ 3</span> 之間。
+        我們在這裡列出 Sharpe 不是看絕對值，而是用<span class="font-semibold text-white">「不同 K 的相對排名」</span>
+        來輔助選擇 ── K=7 Sharpe 最高代表它的報酬曲線在 perfect-fill 假設下最穩定，
+        K=5 雖然 Sharpe 略低但跟最高也只差 2.5，所以可以兼顧 cycle return 跟 Sharpe 兩個指標。
+      </p>
+    </div>
   </div>
 </section>
 
