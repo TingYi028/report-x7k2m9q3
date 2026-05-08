@@ -42,12 +42,83 @@
 
   /* Inline math (mono font; allow wrap to avoid container overflow) */
   .math, code.math { font-family: 'JetBrains Mono', monospace; font-weight: 600; }
-  .math sub, .math sup { font-size: 0.7em; font-weight: 600; }
-  /* Display math block — auto horizontal scroll if too wide for container */
-  .math-block { font-family: 'JetBrains Mono', monospace; background: #F9FAFB; border-radius: 6px; padding: 14px 18px; text-align: center; font-size: 14px; line-height: 1.7; color: #111827; overflow-x: auto; white-space: nowrap; }
-  .math-block .frac { display: inline-block; vertical-align: middle; text-align: center; margin: 0 4px; }
-  .math-block .frac .num { display: block; border-bottom: 1.5px solid #111827; padding: 0 6px 1px; }
-  .math-block .frac .den { display: block; padding: 1px 6px 0; }
+  .math sub, .math sup { font-size: 0.72em; font-weight: 600; }
+
+  /* === Display math block — readable, Canva-style === */
+  .math-block {
+    font-family: 'Outfit', sans-serif;
+    font-size: 18px;
+    font-weight: 500;
+    line-height: 2;
+    background: linear-gradient(135deg, #FAFBFC 0%, #F3F4F6 100%);
+    border: 1.5px solid #E5E7EB;
+    border-radius: 12px;
+    padding: 22px 28px;
+    text-align: center;
+    color: #111827;
+    overflow-x: auto;
+    white-space: nowrap;
+    letter-spacing: 0.01em;
+  }
+  .math-block.text-xs { font-size: 14px; line-height: 1.9; padding: 18px 22px; }
+
+  /* Subscript / superscript proper sizing */
+  .math-block sub, .math-block sup {
+    font-size: 0.62em;
+    font-weight: 500;
+    font-style: normal;
+  }
+
+  /* Variables get subtle italic + dark blue tint */
+  .math-block .v {
+    font-style: italic;
+    font-weight: 600;
+    color: #1E3A8A;
+  }
+  /* Function names (log, argmax, NDCG, ceil_tick, ...) */
+  .math-block .fn {
+    font-weight: 700;
+    color: #B45309;
+    margin: 0 2px;
+  }
+  /* Operators (=, +, −, ·) with breathing room */
+  .math-block .op {
+    color: #6B7280;
+    font-weight: 600;
+    margin: 0 8px;
+  }
+  /* Sets / brackets */
+  .math-block .set {
+    color: #047857;
+    font-weight: 600;
+  }
+  /* Constants / key numbers (e.g., K, 5, 7%) get highlighted */
+  .math-block .num {
+    color: #DC2626;
+    font-weight: 700;
+  }
+
+  /* Fraction box — improved with more vertical breath */
+  .math-block .frac {
+    display: inline-flex;
+    flex-direction: column;
+    vertical-align: middle;
+    text-align: center;
+    margin: 0 6px;
+    padding: 0 4px;
+  }
+  .math-block .frac .num-row {
+    border-bottom: 2px solid #111827;
+    padding: 0 8px 4px;
+    line-height: 1.5;
+  }
+  .math-block .frac .den-row {
+    padding: 4px 8px 0;
+    line-height: 1.5;
+  }
+  /* Backwards-compat for old class names */
+  .math-block .frac .num { display: block; border-bottom: 2px solid #111827; padding: 0 8px 4px; line-height: 1.5; }
+  .math-block .frac .den { display: block; padding: 4px 8px 0; line-height: 1.5; }
   /* SVG architecture diagram — no hover transforms (cause jitter on <g>) */
   .arch-node { cursor: default; }
 
@@ -66,13 +137,20 @@
     transform: translateY(-4px) scale(1.02);
   }
 
-  /* Plotly chart hover container (subtle scale) */
-  .js-plotly-plot { transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1); }
-
-  /* Plotly tooltip Canva styling */
-  .hovertext path { stroke: #111827 !important; stroke-width: 2 !important; }
-  .hovertext text { font-family: 'Outfit', sans-serif !important; }
-  g.hoverlayer .hovertext rect.bg { rx: 8 !important; ry: 8 !important; }
+  /* === Canva-style Plotly tooltip ===
+     注意：絕對不可以對 .hovertext 加 transform 動畫（Plotly 用 transform 定位 tooltip，會跳位）
+     也不可以對 .points path 加 transition（會讓 bar/marker 更新時滑動，看起來像 bug）
+     只用 opacity 動畫 + 字體樣式，最安全。 */
+  .hoverlayer .hovertext {
+    animation: tooltip-fade 0.18s ease-out;
+  }
+  .hoverlayer .hovertext text {
+    font-family: 'Outfit', sans-serif !important;
+  }
+  @keyframes tooltip-fade {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
 
   /* Decision / feature cards: bouncier scale */
   .group.cursor-default {
@@ -253,8 +331,14 @@
             給定第 <code class="mono text-amber-200">t</code> 日所有候選股票的歷史 OHLC，
             為每一檔 <code class="mono text-amber-200">i</code> 預測：
           </p>
-          <div class="bg-black/30 rounded-lg p-5 my-3 mono text-center text-lg">
-            y<sub>i,t</sub> &nbsp;=&nbsp; log ( H<sub>i,t+1</sub> / L<sub>i,t</sub> )
+          <div class="bg-black/30 rounded-lg p-6 my-3 text-center" style="font-family: 'Outfit', sans-serif; font-size: 22px; font-weight: 500; color: white; line-height: 1.8;">
+            <span style="font-style: italic; color: #FCD34D; font-weight: 600;">y</span><sub style="font-size: 0.6em;">i, t</sub>
+            <span style="color: #9CA3AF; margin: 0 10px;">=</span>
+            <span style="color: #F59E0B; font-weight: 700;">log</span>
+            <span style="display: inline-flex; flex-direction: column; vertical-align: middle; text-align: center; margin: 0 6px;">
+              <span style="border-bottom: 2px solid white; padding: 0 10px 4px; line-height: 1.4;"><span style="font-style: italic; color: #FCD34D; font-weight: 600;">H</span><sub style="font-size: 0.55em;">i, t+1</sub></span>
+              <span style="padding: 4px 10px 0; line-height: 1.4;"><span style="font-style: italic; color: #FCD34D; font-weight: 600;">L</span><sub style="font-size: 0.55em;">i, t</sub></span>
+            </span>
           </div>
           <p class="text-sm text-gray-300 leading-relaxed">
             然後選 y 預測值最大的 K = 5 檔，今天 13:00 前掛 limit buy @ L<sub>t</sub>、
@@ -342,8 +426,13 @@
           我們要預測的是「明日最高 H<sub>i,t+1</sub> 相對今日最低 L<sub>i,t</sub> 的對數成長率」：
         </p>
         <div class="math-block mb-4">
-          y<sub>i,t</sub> &nbsp;=&nbsp; log
-          <span class="frac"><span class="num">H<sub>i,t+1</sub></span><span class="den">L<sub>i,t</sub></span></span>
+          <span class="v">y</span><sub>i,t</sub>
+          <span class="op">=</span>
+          <span class="fn">log</span>
+          <span class="frac">
+            <span class="num-row"><span class="v">H</span><sub>i, t+1</sub></span>
+            <span class="den-row"><span class="v">L</span><sub>i, t</sub></span>
+          </span>
         </div>
         <p class="text-gray-700 leading-relaxed text-sm mb-3">
           直觀解讀：<span class="font-semibold text-gray-900">如果我們今天能買在 L<sub>t</sub>、明天能賣在 H<sub>t+1</sub>，
@@ -368,8 +457,20 @@
           而是學「兩兩比較」── 給定股票對 (i, j)，模型要學會
           <span class="font-semibold text-gray-900">哪一檔的 ℓ 較高</span>：
         </p>
-        <div class="math-block mb-4 text-xs">
-          L &nbsp;=&nbsp; Σ<sub>t</sub> Σ<sub>(i,j)∈P<sub>t</sub></sub> &nbsp;|ΔNDCG<sup>(5)</sup><sub>ij</sub>| · log(1 + e<sup>−σ(s<sub>i</sub>−s<sub>j</sub>)</sup>)
+        <div class="math-block mb-4">
+          <span class="v">𝓛</span>
+          <span class="op">=</span>
+          Σ<sub>t</sub>
+          &nbsp;
+          Σ<sub>(<span class="v">i</span>,<span class="v">j</span>) ∈ <span class="set">P</span><sub>t</sub></sub>
+          &nbsp;
+          | Δ<span class="fn">NDCG</span><sup>(5)</sup><sub>ij</sub> |
+          <span class="op">·</span>
+          <span class="fn">log</span>
+          ( 1
+          <span class="op">+</span>
+          <span class="v">e</span><sup>−σ ( <span class="v">s</span><sub>i</sub> − <span class="v">s</span><sub>j</sub> )</sup>
+          )
         </div>
         <p class="text-gray-700 leading-relaxed text-sm mb-3">
           逐項拆解：<code class="math">s<sub>i</sub></code> 是模型給股票 i 的分數（無單位），
@@ -393,10 +494,17 @@
           它衡量「模型挑出的前 5 檔，相比理想答案差多少」：
         </p>
         <div class="math-block mb-4">
-          NDCG@K &nbsp;=&nbsp;
-          <span class="frac"><span class="num">1</span><span class="den">Z<sub>K</sub></span></span>
-          &nbsp;Σ<sup>K</sup><sub>r=1</sub>&nbsp;
-          <span class="frac"><span class="num">2<sup>ℓ<sub>(r)</sub></sup> − 1</span><span class="den">log<sub>2</sub>(r + 1)</span></span>
+          <span class="fn">NDCG</span>@<span class="num">K</span>
+          <span class="op">=</span>
+          <span class="frac">
+            <span class="num-row">1</span>
+            <span class="den-row"><span class="v">Z</span><sub>K</sub></span>
+          </span>
+          Σ<sup>K</sup><sub>r=1</sub>
+          <span class="frac">
+            <span class="num-row">2<sup>ℓ<sub>(r)</sub></sup> <span class="op">−</span> 1</span>
+            <span class="den-row"><span class="fn">log</span><sub>2</sub> ( <span class="v">r</span> <span class="op">+</span> 1 )</span>
+          </span>
         </div>
         <p class="text-gray-700 leading-relaxed text-sm mb-3">
           公式裡 <code class="math">ℓ<sub>(r)</sub></code> 是模型排序第 r 名（r=1 表示首選）股票的真實 label。
@@ -421,19 +529,34 @@
           （後文會解釋這個過濾條件）裡取分數最高的 K=5 檔：
         </p>
         <div class="math-block mb-3">
-          S<sub>t</sub> &nbsp;=&nbsp; argmax<sub>|S|=K,&nbsp;S⊆F<sub>t</sub></sub> &nbsp;Σ<sub>i∈S</sub>&nbsp; s<sub>i,t</sub>
+          <span class="set">𝒮</span><sub>t</sub>
+          <span class="op">=</span>
+          <span class="fn">argmax</span><sub>|S|=<span class="num">K</span>, &nbsp; S ⊆ <span class="set">ℱ</span><sub>t</sub></sub>
+          &nbsp;
+          Σ<sub>i ∈ S</sub>
+          &nbsp;
+          <span class="v">s</span><sub>i,t</sub>
         </div>
         <p class="text-gray-700 leading-relaxed text-sm mb-3">
           每檔等權重持有 <code class="math">w<sub>i</sub> = 1/K = 20%</code>。
           當日含交易成本的單日報酬可寫為：
         </p>
         <div class="math-block">
-          r<sub>t</sub> &nbsp;=&nbsp;
-          <span class="frac"><span class="num">1</span><span class="den">K</span></span>
-          &nbsp;Σ<sub>i∈S<sub>t</sub></sub>&nbsp;
-          [&nbsp;
-          <span class="frac"><span class="num">H<sup>↓</sup><sub>i,t+1</sub></span><span class="den">L<sup>↑</sup><sub>i,t</sub></span></span>
-          &nbsp;(1 − c<sub>s</sub>)(1 − c<sub>b</sub>) − 1&nbsp;]
+          <span class="v">r</span><sub>t</sub>
+          <span class="op">=</span>
+          <span class="frac">
+            <span class="num-row">1</span>
+            <span class="den-row"><span class="num">K</span></span>
+          </span>
+          Σ<sub>i ∈ <span class="set">𝒮</span><sub>t</sub></sub>
+          &nbsp;[&nbsp;
+          <span class="frac">
+            <span class="num-row"><span class="v">H</span><sup>↓</sup><sub>i, t+1</sub></span>
+            <span class="den-row"><span class="v">L</span><sup>↑</sup><sub>i, t</sub></span>
+          </span>
+          ( 1 <span class="op">−</span> <span class="v">c</span><sub>s</sub> )
+          ( 1 <span class="op">−</span> <span class="v">c</span><sub>b</sub> )
+          <span class="op">−</span> 1 &nbsp;]
         </div>
         <p class="text-gray-700 leading-relaxed text-xs mt-3 text-gray-500">
           注解：<code class="math">L<sup>↑</sup></code> 表示「把 L 向上取到合法 tick」（買單規則，後段詳述），
@@ -453,32 +576,44 @@
         這三條過濾不是任意設的，每一條都對應一個現實 / 統計問題：
       </p>
       <div class="grid md:grid-cols-3 gap-6">
-        <div class="bg-white/5 rounded-md p-5 border-l-4 border-blue-500 min-w-0">
-          <div class="text-sm text-gray-300 mb-2">① 流動性</div>
-          <div class="text-base mono font-semibold break-words">ADV<sub>20</sub>(i, t) ≥ 5×10<sup>7</sup></div>
-          <div class="text-xs text-gray-400 mt-3 leading-relaxed">
-            20 日平均成交金額至少 5000 萬 NTD。<br/>
-            <span class="text-gray-500">為何：成交太冷的股票，我們的買單可能撐起價格、賣單可能撈不到買盤。
-            模擬平台會 perfect-fill，但實盤會有滑點，這條過濾預先排除了最危險的標的。</span>
+        <div class="bg-white/5 rounded-xl p-5 border-l-4 border-blue-500 min-w-0">
+          <div class="text-xs uppercase tracking-wider text-blue-300 font-bold mb-2">① 流動性</div>
+          <div class="bg-white/5 rounded-md py-3 px-2 text-center mb-3" style="font-family: 'Outfit', sans-serif; font-size: 16px; font-weight: 500; color: white;">
+            <span style="font-style: italic; color: #93C5FD; font-weight: 600;">ADV</span><sub style="font-size: 0.65em;">20</sub>
+            (<span style="font-style: italic; color: #93C5FD;">i</span>, <span style="font-style: italic; color: #93C5FD;">t</span>)
+            <span style="color: #9CA3AF; margin: 0 6px;">≥</span>
+            <span style="color: #FCA5A5; font-weight: 700;">5</span>×10<sup style="font-size: 0.65em;">7</sup>
+          </div>
+          <div class="text-xs text-gray-400 leading-relaxed">
+            20 日平均成交金額至少 5000 萬 NTD。
+            <span class="text-gray-500">成交太冷的股票，買單可能撐起價格、賣單撈不到買盤。模擬平台 perfect-fill，但實盤有滑點，先排除最危險的標的。</span>
           </div>
         </div>
-        <div class="bg-white/5 rounded-md p-5 border-l-4 border-emerald-500 min-w-0">
-          <div class="text-sm text-gray-300 mb-2">② 下限價</div>
-          <div class="text-base mono font-semibold break-words">C<sub>i,t</sub> ≥ 10</div>
-          <div class="text-xs text-gray-400 mt-3 leading-relaxed">
-            收盤價至少 10 元。<br/>
-            <span class="text-gray-500">為何：&lt; 10 元的股票 tick = 0.01，但相對價格只有 0.1%；
-            而 ≥ 10 元的股票 tick = 0.05，相對 0.5%。低價股的「±1 tick margin」相對成本太大，
-            訊號比較 noisy。</span>
+        <div class="bg-white/5 rounded-xl p-5 border-l-4 border-emerald-500 min-w-0">
+          <div class="text-xs uppercase tracking-wider text-emerald-300 font-bold mb-2">② 下限價</div>
+          <div class="bg-white/5 rounded-md py-3 px-2 text-center mb-3" style="font-family: 'Outfit', sans-serif; font-size: 16px; font-weight: 500; color: white;">
+            <span style="font-style: italic; color: #6EE7B7; font-weight: 600;">C</span><sub style="font-size: 0.65em;">i, t</sub>
+            <span style="color: #9CA3AF; margin: 0 6px;">≥</span>
+            <span style="color: #FCA5A5; font-weight: 700;">10</span>
+          </div>
+          <div class="text-xs text-gray-400 leading-relaxed">
+            收盤價至少 10 元。
+            <span class="text-gray-500">&lt; 10 元股票 tick=0.01（相對 0.1%）；≥ 10 元 tick=0.05（相對 0.5%）。低價股「±1 tick margin」相對成本太大，訊號 noisy。</span>
           </div>
         </div>
-        <div class="bg-white/5 rounded-md p-5 border-l-4 border-amber-500 min-w-0">
-          <div class="text-sm text-gray-300 mb-2">③ 避漲停</div>
-          <div class="text-base mono font-semibold break-words">(C<sub>t</sub> − C<sub>t−1</sub>) / C<sub>t−1</sub> &lt; 0.07</div>
-          <div class="text-xs text-gray-400 mt-3 leading-relaxed">
-            今日漲幅 &lt; 7%（台股漲停板是 ±10%）。<br/>
-            <span class="text-gray-500">為何：今日已接近漲停的股票，明日繼續上攻的空間先天受限，
-            而且容易出現「跳空高開後一路殺低」的不利型態。先避開。</span>
+        <div class="bg-white/5 rounded-xl p-5 border-l-4 border-amber-500 min-w-0">
+          <div class="text-xs uppercase tracking-wider text-amber-300 font-bold mb-2">③ 避漲停</div>
+          <div class="bg-white/5 rounded-md py-3 px-2 text-center mb-3" style="font-family: 'Outfit', sans-serif; font-size: 14px; font-weight: 500; color: white;">
+            <span style="display: inline-flex; flex-direction: column; vertical-align: middle; text-align: center; margin: 0 4px;">
+              <span style="border-bottom: 2px solid white; padding: 0 6px 2px;"><span style="font-style: italic; color: #FCD34D;">C</span><sub style="font-size: 0.65em;">t</sub> <span style="color: #9CA3AF;">−</span> <span style="font-style: italic; color: #FCD34D;">C</span><sub style="font-size: 0.65em;">t−1</sub></span>
+              <span style="padding: 2px 6px 0;"><span style="font-style: italic; color: #FCD34D;">C</span><sub style="font-size: 0.65em;">t−1</sub></span>
+            </span>
+            <span style="color: #9CA3AF; margin: 0 6px;">&lt;</span>
+            <span style="color: #FCA5A5; font-weight: 700;">7%</span>
+          </div>
+          <div class="text-xs text-gray-400 leading-relaxed">
+            今日漲幅 &lt; 7%（台股漲停板 ±10%）。
+            <span class="text-gray-500">今日已接近漲停的股票，明日繼續上攻空間先天受限，且容易出現「跳空高開後一路殺低」的不利型態。</span>
           </div>
         </div>
       </div>
@@ -1811,8 +1946,11 @@ const CANVA_THEME = {
   paper_bgcolor: 'rgba(0,0,0,0)',
   plot_bgcolor: 'rgba(0,0,0,0)',
   hoverlabel: {
-    bgcolor: '#111827', bordercolor: '#111827',
-    font: { family: 'Outfit', size: 13, color: 'white' },
+    bgcolor: '#111827',
+    bordercolor: '#111827',
+    font: { family: 'Outfit, sans-serif', size: 13, color: 'white', weight: 500 },
+    align: 'left',
+    namelength: -1,           // 顯示完整 trace 名稱
   },
   colorway: ['#3B82F6','#10B981','#F59E0B','#F43F5E','#8B5CF6'],
 };
@@ -1889,12 +2027,9 @@ const K_SWEEP = [
       line: { color: 'white', width: 2 },
     },
     name: 'Cycle Return',
-    text: cycles.map((v, i) => [2,5,7].includes(ks[i]) ? '<b>+' + v.toFixed(2) + '%</b>' : '+' + v.toFixed(1) + '%'),
-    textposition: 'outside',
-    textfont: { family: 'Outfit', size: 11, color: '#111827' },
     cliponaxis: false,
     yaxis: 'y',
-    hovertemplate: '<b>K = %{x}</b><br>cycle return = +%{y:.2f}%<extra></extra>',
+    hovertemplate: '<b>K = %{x}</b><br>cycle return = <b>+%{y:.2f}%</b><extra></extra>',
   };
   const traceSharpe = {
     type: 'scatter',
@@ -1936,8 +2071,29 @@ const K_SWEEP = [
       bgcolor: 'rgba(255,255,255,0.8)',
     },
     bargap: 0.3,
+    // Bar 數值改用 annotation 渲染（最上層，不會被 Sharpe 線壓住），加白底 pill
+    annotations: ks.map((k, i) => {
+      const isHighlight = [2,5,7].includes(k);
+      return {
+        x: String(k), y: cycles[i],
+        xref: 'x', yref: 'y',
+        yshift: 16,                          // 浮在 bar 上方一點
+        text: (isHighlight ? '<b>+' : '+') + cycles[i].toFixed(2) + (isHighlight ? '%</b>' : '%'),
+        showarrow: false,
+        font: {
+          family: 'Outfit',
+          size: isHighlight ? 12 : 10,
+          color: '#111827',
+        },
+        bgcolor: 'rgba(255,255,255,0.92)',
+        bordercolor: isHighlight ? colors[i] : 'rgba(0,0,0,0)',
+        borderwidth: isHighlight ? 1.5 : 0,
+        borderpad: 4,
+      };
+    }),
   };
-  Plotly.newPlot('k-sweep-chart', [traceCycle, traceSharpe], layout, {responsive: true, displayModeBar: false});
+  Plotly.newPlot('k-sweep-chart', [traceSharpe, traceCycle], layout, {responsive: true, displayModeBar: false});
+  // ↑ 注意：把 traceSharpe 放前面，traceCycle 後面 → bar render 在 line 上方
 })();
 
 // ============= Equity curves data =============
