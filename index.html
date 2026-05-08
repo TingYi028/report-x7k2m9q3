@@ -44,27 +44,28 @@
   .math, code.math { font-family: 'JetBrains Mono', monospace; font-weight: 600; }
   .math sub, .math sup { font-size: 0.72em; font-weight: 600; }
 
-  /* === Display math block — readable, Canva-style === */
+  /* === Display math block — readable, Canva-style ===
+     字體用 JS 動態 auto-fit, 沒有 overflow scrollbar */
   .math-block {
     font-family: 'Outfit', sans-serif;
-    font-size: 18px;
+    font-size: 24px;             /* JS 會根據 container 寬度動態 shrink */
     font-weight: 500;
-    line-height: 2;
+    line-height: 2.2;
     background: linear-gradient(135deg, #FAFBFC 0%, #F3F4F6 100%);
     border: 1.5px solid #E5E7EB;
-    border-radius: 12px;
-    padding: 22px 28px;
+    border-radius: 14px;
+    padding: 28px 32px;
     text-align: center;
     color: #111827;
-    overflow-x: auto;
+    overflow: hidden;            /* 不顯示滾軸 */
     white-space: nowrap;
     letter-spacing: 0.01em;
   }
-  .math-block.text-xs { font-size: 14px; line-height: 1.9; padding: 18px 22px; }
+  .math-block.text-xs { font-size: 22px; line-height: 2; padding: 24px 28px; }
 
-  /* Subscript / superscript proper sizing */
+  /* Subscript / superscript proper sizing — bigger so they're readable */
   .math-block sub, .math-block sup {
-    font-size: 0.62em;
+    font-size: 0.72em;           /* was 0.62 → 更易讀 */
     font-weight: 500;
     font-style: normal;
   }
@@ -92,8 +93,9 @@
     color: #047857;
     font-weight: 600;
   }
-  /* Constants / key numbers (e.g., K, 5, 7%) get highlighted */
-  .math-block .num {
+  /* Constants / key numbers (e.g., K, 5, 7%) get highlighted
+     注意: 改名為 .hl (highlight) 避免跟舊版分數分子的 .num 撞名導致誤加底線 */
+  .math-block .hl {
     color: #DC2626;
     font-weight: 700;
   }
@@ -116,9 +118,10 @@
     padding: 4px 8px 0;
     line-height: 1.5;
   }
-  /* Backwards-compat for old class names */
-  .math-block .frac .num { display: block; border-bottom: 2px solid #111827; padding: 0 8px 4px; line-height: 1.5; }
-  .math-block .frac .den { display: block; padding: 4px 8px 0; line-height: 1.5; }
+  /* Backwards-compat for old class names — 限定為 .frac 的「直接子層」, 避免巢狀誤加底線 */
+  .math-block .frac > .num { display: block; border-bottom: 2px solid #111827; padding: 0 8px 4px; line-height: 1.5; }
+  .math-block .frac > .den { display: block; padding: 4px 8px 0; line-height: 1.5; }
+
   /* SVG architecture diagram — no hover transforms (cause jitter on <g>) */
   .arch-node { cursor: default; }
 
@@ -494,7 +497,7 @@
           它衡量「模型挑出的前 5 檔，相比理想答案差多少」：
         </p>
         <div class="math-block mb-4">
-          <span class="fn">NDCG</span>@<span class="num">K</span>
+          <span class="fn">NDCG</span>@<span class="hl">K</span>
           <span class="op">=</span>
           <span class="frac">
             <span class="num-row">1</span>
@@ -531,7 +534,7 @@
         <div class="math-block mb-3">
           <span class="set">𝒮</span><sub>t</sub>
           <span class="op">=</span>
-          <span class="fn">argmax</span><sub>|S|=<span class="num">K</span>, &nbsp; S ⊆ <span class="set">ℱ</span><sub>t</sub></sub>
+          <span class="fn">argmax</span><sub>|S|=<span class="hl">K</span>, &nbsp; S ⊆ <span class="set">ℱ</span><sub>t</sub></sub>
           &nbsp;
           Σ<sub>i ∈ S</sub>
           &nbsp;
@@ -546,7 +549,7 @@
           <span class="op">=</span>
           <span class="frac">
             <span class="num-row">1</span>
-            <span class="den-row"><span class="num">K</span></span>
+            <span class="den-row"><span class="hl">K</span></span>
           </span>
           Σ<sub>i ∈ <span class="set">𝒮</span><sub>t</sub></sub>
           &nbsp;[&nbsp;
@@ -1940,6 +1943,38 @@ const FAMILY_COLOR = {
   'Momentum':  '#3B82F6',
 };
 
+// ─── Math-block auto-fit ───
+// 把每個 .math-block 字體動態縮小, 直到內容寬度剛好 fit container (沒有 overflow)
+function fitMathBlock(block) {
+  // 量測 wrapper 內部寬度 (扣掉 padding)
+  const cs = getComputedStyle(block);
+  const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+  const maxW = block.clientWidth - padX;
+
+  // 從 default font-size 開始, 一路 shrink
+  let fontSize = block.classList.contains('text-xs') ? 22 : 24;
+  block.style.fontSize = fontSize + 'px';
+
+  // scrollWidth = 內容真實寬度; shrink 到 ≤ maxW or 達到下限 11px
+  let safety = 30;
+  while (block.scrollWidth > block.clientWidth && fontSize > 11 && safety-- > 0) {
+    fontSize -= 0.5;
+    block.style.fontSize = fontSize + 'px';
+  }
+}
+
+function fitAllMathBlocks() {
+  document.querySelectorAll('.math-block').forEach(fitMathBlock);
+}
+
+// 初始 + resize 時重新 fit
+window.addEventListener('load', fitAllMathBlocks);
+window.addEventListener('resize', () => {
+  // debounce 100ms
+  clearTimeout(window.__mathFitTimer);
+  window.__mathFitTimer = setTimeout(fitAllMathBlocks, 100);
+});
+
 // ─── Canva theme base (shared by all charts) ───
 const CANVA_THEME = {
   font: { family: 'Outfit, sans-serif', color: '#111827', size: 13 },
@@ -1978,7 +2013,7 @@ const CANVA_THEME = {
     margin: { l: 140, r: 80, t: 30, b: 50 },
     xaxis: {
       title: { text: 'Gain importance (% of total)', font: { family: 'Outfit', size: 13, color: '#6B7280' }, standoff: 10 },
-      gridcolor: '#F3F4F6', zerolinecolor: '#111827', zerolinewidth: 2,
+      gridcolor: '#F3F4F6', zeroline: false,
       tickfont: { family: 'Outfit', size: 12, color: '#6B7280' },
       tickformat: '.0f', ticksuffix: '%',
       showline: false, ticks: '',
@@ -2010,16 +2045,22 @@ const K_SWEEP = [
 ];
 
 (function renderKSweep() {
+  // ─── KEY FIX ───
+  // 之前的 bug: 用 ks.map(String) 當 x 值, Plotly 會 auto-type 成 linear
+  //  → x 軸範圍變 [1, 100] → 11 個 bar 擠在左 10%
+  // 修法: 改用「索引位置」(0..10) 當 x, 用 tickvals/ticktext 映射回 K 標籤,
+  //  並 hard-code x 軸範圍 = [-0.5, 10.5], 完全消除 auto-type 空間.
+
   const ks = K_SWEEP.map(d => d.k);
   const cycles = K_SWEEP.map(d => d.cycle);
   const sharpes = K_SWEEP.map(d => d.sharpe);
-  // 顏色：K=2 (best return) rose · K=5 (chosen) blue · K=7 (best Sharpe) amber · others light gray
+  const xIdx = ks.map((_, i) => i);              // [0, 1, 2, ..., 10]
   const colors = ks.map(k => k === 5 ? '#3B82F6' : k === 2 ? '#F43F5E' : k === 7 ? '#F59E0B' : '#D1D5DB');
   const opacities = ks.map(k => [2,5,7].includes(k) ? 1.0 : 0.6);
 
   const traceCycle = {
     type: 'bar',
-    x: ks.map(String),
+    x: xIdx,                                      // ← 索引位置 0~10, 純數值
     y: cycles,
     marker: {
       color: colors,
@@ -2029,63 +2070,71 @@ const K_SWEEP = [
     name: 'Cycle Return',
     cliponaxis: false,
     yaxis: 'y',
-    hovertemplate: '<b>K = %{x}</b><br>cycle return = <b>+%{y:.2f}%</b><extra></extra>',
+    customdata: ks,                               // 把 K 值塞進 customdata 給 hover 用
+    hovertemplate: '<b>K = %{customdata}</b><br>cycle return = <b>+%{y:.2f}%</b><extra></extra>',
   };
   const traceSharpe = {
     type: 'scatter',
     mode: 'lines+markers',
-    x: ks.map(String),
+    x: xIdx,                                      // ← 跟 bar 同樣索引位置, 確保對齊
     y: sharpes,
     name: 'Sharpe',
     line: { color: '#111827', width: 2.5, shape: 'spline', smoothing: 0.6 },
     marker: { color: '#111827', size: 8, line: { color: 'white', width: 2 } },
     yaxis: 'y2',
-    hovertemplate: '<b>K = %{x}</b><br>Sharpe = %{y:.2f}<extra></extra>',
+    customdata: ks,
+    hovertemplate: '<b>K = %{customdata}</b><br>Sharpe = %{y:.2f}<extra></extra>',
   };
   const layout = {
     ...CANVA_THEME,
-    margin: { l: 65, r: 65, t: 60, b: 50 },
+    margin: { l: 65, r: 65, t: 60, b: 60 },
     xaxis: {
-      tickfont: { family: 'Outfit', size: 13, color: '#111827' },
-      type: 'category',
-      showgrid: false, showline: false, ticks: '',
+      // 純 linear 軸, 索引 0~10. range 寫死 → bar 一定均分
+      range: [-0.5, ks.length - 0.5],
+      tickmode: 'array',
+      tickvals: xIdx,                             // 在 0, 1, 2, ..., 10 顯示 tick
+      ticktext: ks.map(String),                   // 顯示為 1, 2, 3, 5, ..., 100
+      tickfont: { family: 'Outfit', size: 12, color: '#111827' },
+      showgrid: false, showline: false, ticks: '', zeroline: false,
+      automargin: true,
     },
     yaxis: {
       title: { text: 'Cycle Return (%)', font: { family: 'Outfit', size: 13, color: '#3B82F6' }, standoff: 10 },
       tickfont: { family: 'Outfit', size: 11, color: '#3B82F6' },
       tickformat: '.0f', ticksuffix: '%',
-      gridcolor: '#F3F4F6', zerolinecolor: '#111827', zerolinewidth: 2,
+      gridcolor: '#F3F4F6',
+      zeroline: false,
       showline: false, ticks: '',
-      range: [0, 19],
+      range: [0, 21],
     },
     yaxis2: {
       title: { text: 'Sharpe', font: { family: 'Outfit', size: 13, color: '#111827' }, standoff: 10 },
       tickfont: { family: 'Outfit', size: 11, color: '#111827' },
       overlaying: 'y', side: 'right', showgrid: false,
       showline: false, ticks: '',
-      range: [25, 110],
+      range: [25, 110], zeroline: false,
     },
     legend: {
-      orientation: 'h', y: 1.12, x: 0.5, xanchor: 'center',
+      orientation: 'h', y: 1.10, x: 0.5, xanchor: 'center',
       font: { family: 'Outfit', size: 12, color: '#374151' },
       bgcolor: 'rgba(255,255,255,0.8)',
     },
-    bargap: 0.3,
-    // Bar 數值改用 annotation 渲染（最上層，不會被 Sharpe 線壓住），加白底 pill
+    bargap: 0.25,
     annotations: ks.map((k, i) => {
       const isHighlight = [2,5,7].includes(k);
       return {
-        x: String(k), y: cycles[i],
+        x: i,                                     // ← 用索引位置, 跟 bar 對齊
+        y: cycles[i],
         xref: 'x', yref: 'y',
-        yshift: 16,                          // 浮在 bar 上方一點
-        text: (isHighlight ? '<b>+' : '+') + cycles[i].toFixed(2) + (isHighlight ? '%</b>' : '%'),
+        yshift: isHighlight ? 14 : 10,
+        text: (isHighlight ? '<b>+' : '+') + cycles[i].toFixed(isHighlight ? 2 : 1) + (isHighlight ? '%</b>' : '%'),
         showarrow: false,
         font: {
           family: 'Outfit',
-          size: isHighlight ? 12 : 10,
-          color: '#111827',
+          size: isHighlight ? 13 : 10,
+          color: isHighlight ? '#111827' : '#6B7280',
         },
-        bgcolor: 'rgba(255,255,255,0.92)',
+        bgcolor: isHighlight ? 'rgba(255,255,255,0.95)' : 'rgba(0,0,0,0)',
         bordercolor: isHighlight ? colors[i] : 'rgba(0,0,0,0)',
         borderwidth: isHighlight ? 1.5 : 0,
         borderpad: 4,
@@ -2093,7 +2142,6 @@ const K_SWEEP = [
     }),
   };
   Plotly.newPlot('k-sweep-chart', [traceSharpe, traceCycle], layout, {responsive: true, displayModeBar: false});
-  // ↑ 注意：把 traceSharpe 放前面，traceCycle 後面 → bar render 在 line 上方
 })();
 
 // ============= Equity curves data =============
@@ -2130,14 +2178,14 @@ const EQUITY = {
     xaxis: {
       title: { text: '月內交易日序', font: { family: 'Outfit', size: 13, color: '#6B7280' }, standoff: 10 },
       tickfont: { family: 'Outfit', size: 11, color: '#6B7280' },
-      gridcolor: '#F3F4F6', zerolinecolor: '#111827', zerolinewidth: 2,
+      gridcolor: '#F3F4F6', zeroline: false,
       dtick: 2, showline: false, ticks: '',
     },
     yaxis: {
       title: { text: '累積已實現 PnL (%)', font: { family: 'Outfit', size: 13, color: '#6B7280' }, standoff: 10 },
       tickfont: { family: 'Outfit', size: 11, color: '#6B7280' },
       tickformat: '.0f', ticksuffix: '%',
-      gridcolor: '#F3F4F6', zerolinecolor: '#111827', zerolinewidth: 2,
+      gridcolor: '#F3F4F6', zeroline: false,
       showline: false, ticks: '',
     },
     legend: {
